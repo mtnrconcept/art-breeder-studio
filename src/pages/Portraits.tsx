@@ -40,12 +40,28 @@ const Portraits = () => {
 
     setIsGenerating(true);
     try {
-      const portraitPrompt = `Generate a ${style} portrait of a ${gender === 'any' ? 'person' : gender} around ${age} years old with a ${expression} expression. ${prompt}. High quality, detailed facial features, professional lighting.`;
+      // Portraits: Generate faces with adjustable "genes" like Artbreeder's splicer for faces
+      const genderText = gender === 'any' ? 'person' : gender === 'male' ? 'man' : 'woman';
+      const styleMap: Record<string, string> = {
+        'realistic': 'photorealistic, studio photography quality',
+        'artistic': 'artistic painting style, painterly brushstrokes',
+        'anime': 'anime/manga art style with large expressive eyes',
+        'oil-painting': 'classical oil painting style, Renaissance masters technique'
+      };
+      const expressionMap: Record<string, string> = {
+        'neutral': 'calm neutral expression, relaxed face',
+        'happy': 'genuine warm smile, happy sparkling eyes',
+        'serious': 'serious contemplative expression, focused gaze',
+        'mysterious': 'enigmatic mysterious expression, slight Mona Lisa smile',
+        'surprised': 'surprised expression with raised eyebrows'
+      };
+
+      const portraitPrompt = `Portrait of a ${genderText}, apparent age ${age} years old. ${styleMap[style] || style}. ${expressionMap[expression] || expression}. ${prompt ? `Additional details: ${prompt}.` : ''} High-resolution face with natural skin texture, realistic eye reflections, well-defined facial features, flattering studio lighting.`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {
           prompt: portraitPrompt,
-          baseImage: referenceImage,
+          baseImageUrl: referenceImage,
           type: 'portrait'
         }
       });
