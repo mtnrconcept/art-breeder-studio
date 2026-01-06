@@ -61,8 +61,13 @@ const Composer = () => {
       return;
     }
 
+    // Composer: Mix images and text with precision - compose visual elements on a canvas
+    const composerPrompt = baseImage 
+      ? `Compose this image with the following creative direction: ${prompt}. Blend the visual elements with ${styleStrength[0]}% style influence, preserving ${faceStrength[0]}% of facial features if present, and ${contentStrength[0]}% content fidelity.`
+      : prompt;
+
     const result = await generateImage({
-      prompt,
+      prompt: composerPrompt,
       baseImageUrl: baseImage || undefined,
       styleStrength: styleStrength[0],
       faceStrength: faceStrength[0],

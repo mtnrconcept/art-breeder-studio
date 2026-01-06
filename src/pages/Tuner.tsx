@@ -52,21 +52,31 @@ const Tuner = () => {
 
     setIsGenerating(true);
     try {
+      // Tuner: Enhance and adjust image qualities - like professional photo editing
       const presetDescriptions: Record<string, string> = {
-        enhance: 'Enhance overall quality and details',
-        portrait: 'Optimize for portrait photography with skin smoothing and eye enhancement',
-        landscape: 'Enhance landscape with vibrant colors and atmospheric depth',
-        vintage: 'Apply vintage film-like aesthetic with warm tones and grain',
-        cinematic: 'Apply cinematic color grading with dramatic contrast',
-        hdr: 'Create HDR effect with enhanced dynamic range'
+        enhance: `General enhancement: improve overall clarity, optimize exposure, enhance natural colors. Intensity: ${intensity}%`,
+        portrait: `Portrait optimization: smooth skin texture naturally (${intensity}%), enhance eye clarity and catchlights, improve hair detail, subtle face contouring. Keep natural look.`,
+        landscape: `Landscape enhancement: boost sky vibrancy, enhance foliage colors, add atmospheric depth (${intensity}%), improve shadow detail in foreground.`,
+        vintage: `Vintage film look: add warm color cast, slight fade in blacks, film grain texture (${intensity}%), reduced saturation in highlights, lifted shadows.`,
+        cinematic: `Cinematic color grade: teal and orange color scheme, dramatic contrast (${intensity}%), anamorphic lens feel, crushed blacks, film-like dynamic range.`,
+        hdr: `HDR enhancement: expand dynamic range (${intensity}%), recover shadow details, protect highlights, local contrast enhancement, vivid but natural colors.`
       };
 
-      const tunePrompt = `${presetDescriptions[preset]}. Enhancement intensity: ${intensity}%, sharpness: ${sharpness}%, color boost: ${colorBoost}%, noise reduction: ${noiseReduction}%. Maintain the original composition while improving quality.`;
+      const tunePrompt = `Apply these professional adjustments to the image:
+
+${presetDescriptions[preset] || presetDescriptions['enhance']}
+
+Technical adjustments:
+- Sharpness: ${sharpness}% (${sharpness < 30 ? 'soft focus' : sharpness < 70 ? 'balanced sharpness' : 'crisp detailed sharpening'})
+- Color boost: ${colorBoost}% (${colorBoost < 30 ? 'muted subdued colors' : colorBoost < 70 ? 'natural vibrant colors' : 'highly saturated punchy colors'})
+- Noise reduction: ${noiseReduction}% (${noiseReduction < 30 ? 'preserve grain/texture' : noiseReduction < 70 ? 'moderate smoothing' : 'aggressive noise removal'})
+
+Preserve the original subject, composition, and intent while applying these enhancements professionally.`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {
           prompt: tunePrompt,
-          baseImage: sourceImage,
+          baseImageUrl: sourceImage,
           type: 'tune'
         }
       });

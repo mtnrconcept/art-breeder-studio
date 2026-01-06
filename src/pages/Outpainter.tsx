@@ -42,14 +42,32 @@ const Outpainter = () => {
 
     setIsGenerating(true);
     try {
-      const directionText = direction === 'all' ? 'in all directions' : `towards the ${direction}`;
-      const outpaintPrompt = `Extend this image ${directionText} by ${expansionAmount}%. ${prompt || 'Continue the scene naturally and seamlessly'}. Maintain consistent style, lighting, and perspective.`;
+      // Outpainter: Expand image beyond borders like Artbreeder's outpainter
+      const directionMap: Record<string, string> = {
+        'all': 'Expand equally in all four directions (top, bottom, left, right)',
+        'up': 'Expand upward, adding more sky/ceiling/background above',
+        'down': 'Expand downward, adding more ground/floor/foreground below',
+        'left': 'Expand to the left, continuing the scene leftward',
+        'right': 'Expand to the right, continuing the scene rightward'
+      };
+
+      const outpaintPrompt = `${directionMap[direction] || directionMap['all']}. Expansion amount: ${expansionAmount}% of original size. ${prompt ? `Scene extension guidance: ${prompt}.` : 'Continue the existing scene naturally.'} 
+
+Critical requirements:
+- Match the exact art style, brushwork, and rendering technique
+- Continue perspective lines and maintain correct vanishing points  
+- Seamlessly extend all textures and patterns
+- Match lighting direction, intensity, and color temperature exactly
+- No visible seam between original and extended areas
+- Maintain consistent level of detail throughout`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {
           prompt: outpaintPrompt,
-          baseImage: sourceImage,
-          type: 'outpaint'
+          baseImageUrl: sourceImage,
+          type: 'outpaint',
+          direction,
+          expansionAmount
         }
       });
 
@@ -57,7 +75,7 @@ const Outpainter = () => {
 
       if (data?.imageUrl) {
         setGeneratedImage(data.imageUrl);
-        toast({ title: "Image étendue !" });
+        toast({ title: "Image étendue avec succès !" });
       }
     } catch (error) {
       console.error('Outpaint error:', error);

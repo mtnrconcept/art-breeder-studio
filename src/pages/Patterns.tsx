@@ -35,7 +35,26 @@ const Patterns = () => {
 
     setIsGenerating(true);
     try {
-      const patternPrompt = `Create a ${seamless ? 'seamless tileable' : ''} ${patternType} pattern with ${colorScheme} colors. Complexity level: ${complexity}%. ${prompt}. High quality, detailed texture, suitable for design projects.`;
+      // Patterns: Like Artbreeder - combine a pattern/texture with a description
+      // The pattern influences the visual style of the generated image
+      const typeMap: Record<string, string> = {
+        'geometric': 'geometric shapes, mathematical precision, clean lines',
+        'organic': 'organic flowing forms, natural curves, biomorphic shapes',
+        'floral': 'botanical flowers and leaves, nature-inspired motifs',
+        'abstract': 'abstract expressionist forms, non-representational shapes',
+        'tribal': 'tribal and ethnic motifs, cultural patterns',
+        'art-deco': 'Art Deco style, 1920s geometric elegance, gold accents'
+      };
+      const colorMap: Record<string, string> = {
+        'vibrant': 'vibrant saturated colors, high contrast',
+        'pastel': 'soft pastel colors, gentle muted tones',
+        'monochrome': 'monochromatic palette, single color variations',
+        'earth': 'earthy natural colors, browns greens and terracotta',
+        'neon': 'neon bright colors, electric glowing hues',
+        'vintage': 'vintage muted colors, aged nostalgic palette'
+      };
+
+      const patternPrompt = `Create ${prompt} using a ${patternType} pattern style. ${typeMap[patternType] || ''}. Color scheme: ${colorMap[colorScheme] || colorScheme}. Detail complexity: ${complexity}% (${complexity < 30 ? 'minimal simple' : complexity < 70 ? 'moderate' : 'highly intricate detailed'}). ${seamless ? 'IMPORTANT: Make this a seamless tileable pattern that repeats perfectly on all edges.' : 'This is a standalone artwork, not necessarily tileable.'}`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {

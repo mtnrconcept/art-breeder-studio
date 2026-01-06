@@ -68,13 +68,15 @@ const Splicer = () => {
       }));
       const imageData = await Promise.all(imageDataPromises);
 
+      // Build weight description for genetic crossbreeding
       const weightDescription = images.map((img, i) => 
-        `Image ${i + 1}: ${img.weight}%`
-      ).join(', ');
+        `Parent ${i + 1} contributes ${img.weight}% of visual genes`
+      ).join('. ');
 
+      // Splicer: Crossbreed images like genetic mixing - blend their visual DNA
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {
-          prompt: `Blend and merge these images together seamlessly, creating a hybrid artwork. Weights: ${weightDescription}. Create a cohesive artistic fusion.`,
+          prompt: `Crossbreed these ${images.length} parent images. ${weightDescription}. Merge their visual genetics: blend colors, shapes, textures, and distinctive features from each parent proportionally to their weights. The offspring should inherit traits from all parents in a natural-looking hybrid.`,
           baseImages: imageData.map(d => d.base64),
           type: 'splice'
         }
@@ -84,11 +86,11 @@ const Splicer = () => {
 
       if (data?.imageUrl) {
         setGeneratedImage(data.imageUrl);
-        toast({ title: "Images fusionnées !" });
+        toast({ title: "Images croisées génétiquement !" });
       }
     } catch (error) {
       console.error('Splice error:', error);
-      toast({ title: "Erreur lors de la fusion", variant: "destructive" });
+      toast({ title: "Erreur lors du croisement", variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
