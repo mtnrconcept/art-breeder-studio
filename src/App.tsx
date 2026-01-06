@@ -8,6 +8,11 @@ import Index from "./pages/Index";
 import Auth from "./pages/Auth";
 import Tools from "./pages/Tools";
 import Composer from "./pages/Composer";
+import Splicer from "./pages/Splicer";
+import Portraits from "./pages/Portraits";
+import Patterns from "./pages/Patterns";
+import Outpainter from "./pages/Outpainter";
+import Tuner from "./pages/Tuner";
 import Gallery from "./pages/Gallery";
 import Explore from "./pages/Explore";
 import NotFound from "./pages/NotFound";
@@ -26,6 +31,11 @@ const App = () => (
             <Route path="/auth" element={<Auth />} />
             <Route path="/tools" element={<Tools />} />
             <Route path="/composer" element={<Composer />} />
+            <Route path="/splicer" element={<Splicer />} />
+            <Route path="/portraits" element={<Portraits />} />
+            <Route path="/patterns" element={<Patterns />} />
+            <Route path="/outpainter" element={<Outpainter />} />
+            <Route path="/tuner" element={<Tuner />} />
             <Route path="/gallery" element={<Gallery />} />
             <Route path="/explore" element={<Explore />} />
             <Route path="*" element={<NotFound />} />

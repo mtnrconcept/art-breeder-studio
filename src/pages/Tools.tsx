@@ -17,7 +17,7 @@ const tools = [
     description: 'Blend multiple images together to create unique hybrid artworks.',
     icon: Shapes,
     color: 'from-blue-500 to-cyan-500',
-    href: '/composer'
+    href: '/splicer'
   },
   {
     id: 'portraits',
@@ -25,7 +25,7 @@ const tools = [
     description: 'Generate and modify realistic human portraits with fine-grained control.',
     icon: User,
     color: 'from-pink-500 to-rose-500',
-    href: '/composer'
+    href: '/portraits'
   },
   {
     id: 'patterns',
@@ -33,7 +33,7 @@ const tools = [
     description: 'Create seamless patterns and textures for design projects.',
     icon: Palette,
     color: 'from-amber-500 to-orange-500',
-    href: '/composer'
+    href: '/patterns'
   },
   {
     id: 'outpainter',
@@ -41,7 +41,7 @@ const tools = [
     description: 'Extend images beyond their original borders using AI.',
     icon: Wand2,
     color: 'from-emerald-500 to-teal-500',
-    href: '/composer'
+    href: '/outpainter'
   },
   {
     id: 'tuner',
@@ -49,7 +49,7 @@ const tools = [
     description: 'Fine-tune and enhance existing images with AI-powered adjustments.',
     icon: Sparkles,
     color: 'from-indigo-500 to-violet-500',
-    href: '/composer'
+    href: '/tuner'
   }
 ];
 
