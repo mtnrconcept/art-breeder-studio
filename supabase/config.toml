@@ -5,7 +5,6 @@ verify_jwt = false
 
 [functions.generate-video]
 verify_jwt = false
-
 [functions.lip-sync]
 verify_jwt = false
 
