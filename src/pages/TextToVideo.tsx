@@ -4,13 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Video, Wand2, RefreshCw, Download, Play, Pause, Settings2 } from 'lucide-react';
+import { Video, Wand2, RefreshCw, Download, Play, Pause, Settings2, AlertCircle } from 'lucide-react';
+import { textToVideo } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const videoModels = [
-    { id: 'kling-2.6', label: 'Kling 2.6', description: 'Best motion' },
-    { id: 'sora-2', label: 'Sora 2', description: 'Highest quality' },
-    { id: 'veo-3', label: 'Veo 3', description: 'Fast' },
-    { id: 'runway-gen4', label: 'Runway Gen-4', description: 'Creative' },
+    { id: 'veo-3', label: 'Veo 3 Preview', description: 'Google AI' },
 ];
 
 const cameraPresets = [
@@ -34,21 +33,56 @@ const TextToVideo = () => {
     const [duration, setDuration] = useState('5');
     const [aspectRatio, setAspectRatio] = useState('16:9');
     const [quality, setQuality] = useState('pro');
-    const [model, setModel] = useState('kling-2.6');
+    const [model, setModel] = useState('veo-3');
     const [camera, setCamera] = useState('static');
     const [motionAmount, setMotionAmount] = useState([50]);
     const [isGenerating, setIsGenerating] = useState(false);
     const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (!prompt.trim()) return;
         setIsGenerating(true);
+        setError(null);
 
-        setTimeout(() => {
-            setGeneratedVideo('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
+        try {
+            const result = await textToVideo(prompt, {
+                negativePrompt: negativePrompt || undefined,
+                duration: parseInt(duration),
+                aspectRatio,
+                cameraMotion: camera,
+                motionAmount: motionAmount[0],
+            });
+
+            if (result.success && result.videoUrl) {
+                setGeneratedVideo(result.videoUrl);
+                setIsPlaying(true);
+                toast({
+                    title: "Video Generated!",
+                    description: "Your video has been created successfully",
+                });
+            } else {
+                const errorMsg = result.error || 'Failed to generate video';
+                setError(errorMsg);
+                toast({
+                    title: "Generation Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsGenerating(false);
-        }, 5000);
+        }
     };
 
     return (
@@ -155,8 +189,8 @@ const TextToVideo = () => {
                                             key={preset.id}
                                             onClick={() => setCamera(preset.id)}
                                             className={`p-2 rounded-lg border text-center transition-all ${camera === preset.id
-                                                    ? 'border-primary bg-primary/10 text-primary'
-                                                    : 'border-border hover:border-primary/50'
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-border hover:border-primary/50'
                                                 }`}
                                         >
                                             <span className="text-lg block">{preset.icon}</span>

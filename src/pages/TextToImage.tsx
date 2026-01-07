@@ -5,7 +5,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Sparkles, Wand2, Image, RefreshCw, Download, Copy, Settings2 } from 'lucide-react';
+import { Sparkles, Wand2, Image, RefreshCw, Download, Copy, Settings2, AlertCircle } from 'lucide-react';
+import { textToImage } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const aspectRatios = [
   { id: '1:1', label: '1:1 Square', width: 1024, height: 1024 },
@@ -43,34 +45,79 @@ const TextToImage = () => {
   const [negativePrompt, setNegativePrompt] = useState('');
   const [aspectRatio, setAspectRatio] = useState('1:1');
   const [selectedStyle, setSelectedStyle] = useState('photorealistic');
-  const [selectedModel, setSelectedModel] = useState('flux-pro');
+  const [selectedModel, setSelectedModel] = useState('imagen-4');
   const [quality, setQuality] = useState([75]);
   const [creativity, setCreativity] = useState([50]);
   const [seed, setSeed] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [generatedImages, setGeneratedImages] = useState<string[]>([]);
   const [numImages, setNumImages] = useState('4');
+  const [error, setError] = useState<string | null>(null);
+  const { toast } = useToast();
 
-  const handleGenerate = () => {
+  const handleGenerate = async () => {
     if (!prompt.trim()) return;
     setIsGenerating(true);
-    
-    // Simulate generation
-    setTimeout(() => {
-      setGeneratedImages([
-        'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=512&h=512&fit=crop',
-        'https://images.unsplash.com/photo-1614850523459-c2f4c699c52e?w=512&h=512&fit=crop',
-        'https://images.unsplash.com/photo-1633177317976-3f9bc45e1d1d?w=512&h=512&fit=crop',
-        'https://images.unsplash.com/photo-1620641788421-7a1c342ea42e?w=512&h=512&fit=crop',
-      ]);
+    setError(null);
+
+    try {
+      // Generate images based on numImages setting
+      const count = parseInt(numImages);
+      const promises = Array.from({ length: count }, () =>
+        textToImage(prompt, {
+          negativePrompt: negativePrompt || undefined,
+          aspectRatio,
+          style: selectedStyle,
+        })
+      );
+
+      const results = await Promise.all(promises);
+      const successfulImages = results
+        .filter(r => r.success && r.imageUrl)
+        .map(r => r.imageUrl!);
+
+      const failedCount = results.filter(r => !r.success).length;
+
+      if (successfulImages.length > 0) {
+        setGeneratedImages(successfulImages);
+        if (failedCount > 0) {
+          toast({
+            title: "Partial Success",
+            description: `${successfulImages.length} images generated, ${failedCount} failed`,
+            variant: "default",
+          });
+        } else {
+          toast({
+            title: "Images Generated!",
+            description: `${successfulImages.length} images created successfully`,
+          });
+        }
+      } else {
+        const errorMsg = results[0]?.error || 'Failed to generate images';
+        setError(errorMsg);
+        toast({
+          title: "Generation Failed",
+          description: errorMsg,
+          variant: "destructive",
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMsg);
+      toast({
+        title: "Error",
+        description: errorMsg,
+        variant: "destructive",
+      });
+    } finally {
       setIsGenerating(false);
-    }, 3000);
+    }
   };
 
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-7xl mx-auto">
           {/* Header */}
@@ -123,11 +170,10 @@ const TextToImage = () => {
                     <button
                       key={style.id}
                       onClick={() => setSelectedStyle(style.id)}
-                      className={`p-3 rounded-lg border text-center transition-all ${
-                        selectedStyle === style.id
-                          ? 'border-primary bg-primary/10 text-primary'
-                          : 'border-border hover:border-primary/50'
-                      }`}
+                      className={`p-3 rounded-lg border text-center transition-all ${selectedStyle === style.id
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border hover:border-primary/50'
+                        }`}
                     >
                       <span className="text-xl mb-1 block">{style.icon}</span>
                       <span className="text-xs">{style.label}</span>
@@ -257,7 +303,7 @@ const TextToImage = () => {
                     </div>
                     <h3 className="text-xl font-semibold mb-2">Ready to Create</h3>
                     <p className="text-muted-foreground max-w-md">
-                      Enter a prompt and click Generate to create stunning AI images. 
+                      Enter a prompt and click Generate to create stunning AI images.
                       Your creations will appear here.
                     </p>
                   </div>
@@ -272,7 +318,7 @@ const TextToImage = () => {
                         </Button>
                       </div>
                     </div>
-                    
+
                     <div className="grid grid-cols-2 gap-4">
                       {generatedImages.map((img, index) => (
                         <div key={index} className="group relative rounded-xl overflow-hidden aspect-square">

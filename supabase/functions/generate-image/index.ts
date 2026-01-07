@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -7,81 +8,156 @@ const corsHeaders = {
 
 interface GenerateRequest {
   prompt: string;
+  negativePrompt?: string;
+  aspectRatio?: string;
+  style?: string;
   baseImageUrl?: string;
   baseImages?: string[];
-  type?: 'compose' | 'splice' | 'portrait' | 'pattern' | 'outpaint' | 'tune';
-  // Composer params
+  maskImageUrl?: string;
+  type?: 'text2img' | 'compose' | 'splice' | 'portrait' | 'pattern' | 'outpaint' | 'tune' | 'inpaint' | 'style-transfer' | 'backdrop' | 'relight';
   styleStrength?: number;
   contentStrength?: number;
-  // Pattern params  
   patternImageUrl?: string;
-  // Outpaint params
   direction?: string;
   expansionAmount?: number;
+  userId?: string;
+}
+
+// Try API call with fallback
+async function callGeminiAPI(endpoint: string, body: object): Promise<Response> {
+  const apiKey1 = Deno.env.get('GEMINI_API_KEY');
+  const apiKey2 = Deno.env.get('GEMINI_API_KEY_2');
+
+  if (!apiKey1 && !apiKey2) {
+    throw new Error('No Gemini API keys configured');
+  }
+
+  const keys = [apiKey1, apiKey2].filter(Boolean) as string[];
+
+  for (let i = 0; i < keys.length; i++) {
+    try {
+      const response = await fetch(`${endpoint}?key=${keys[i]}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (response.ok) {
+        return response;
+      }
+
+      // If rate limited or quota exceeded, try next key
+      if (response.status === 429 || response.status === 403) {
+        console.log(`API key ${i + 1} failed with status ${response.status}, trying fallback...`);
+        continue;
+      }
+
+      // For other errors, return the response
+      return response;
+    } catch (error) {
+      console.error(`API key ${i + 1} error:`, error);
+      if (i === keys.length - 1) throw error;
+    }
+  }
+
+  throw new Error('All API keys failed');
 }
 
 function buildPrompt(params: GenerateRequest): string {
-  const { type, prompt } = params;
+  const { type, prompt, style } = params;
+  const stylePrefix = style ? `Style: ${style}. ` : '';
 
   switch (type) {
     case 'compose':
-      // Composer: Mix images and text with precision - place shapes/images on canvas and describe
-      return `Create an artistic image based on this description: ${prompt}. 
+      return `${stylePrefix}Create an artistic image based on this description: ${prompt}. 
 The image should blend the visual elements precisely according to the composition described.
-Use high-quality artistic rendering with attention to lighting, color harmony, and visual balance.
-The result should be a cohesive artwork that matches the creative vision.`;
+Use high-quality artistic rendering with attention to lighting, color harmony, and visual balance.`;
 
     case 'splice':
-      // Splicer: Mix/crossbreed multiple images together, blending their visual "genes"
       return `Crossbreed and splice these images together to create a hybrid artwork.
 Blend the visual DNA of each image: combine their colors, textures, shapes, and features.
-Like genetic crossbreeding, merge the distinctive traits from each parent image.
-Create a seamless fusion that inherits characteristics from all source images.
 ${prompt}
-The result should look like a natural hybrid, not a collage or overlay.`;
+The result should look like a natural hybrid, not a collage.`;
 
     case 'portrait':
-      // Portraits: Generate faces with adjustable genetic sliders (age, expression, features)
-      return `Generate a photorealistic portrait with these specifications: ${prompt}.
+      return `${stylePrefix}Generate a photorealistic portrait: ${prompt}.
 Create a high-quality face with natural skin texture, realistic lighting, and proper anatomy.
-The portrait should have clear facial features, natural eye reflections, and realistic hair.
-Use studio-quality lighting that flatters the face. The expression should look natural and genuine.
-Avoid any AI artifacts, distortions, or unnatural features.`;
+Studio-quality lighting, natural expression, no AI artifacts.`;
 
     case 'pattern':
-      // Patterns: Combine a pattern/texture with a text description to create styled imagery
-      return `Transform this into an image using the provided pattern as a style guide.
+      return `Transform using the provided pattern as a style guide.
 Apply the pattern's colors, textures, and visual rhythm to create: ${prompt}.
-The pattern should influence the overall aesthetic, color palette, and visual texture.
-Create a cohesive artwork where the pattern DNA is visible in every element.
-The result should feel like the description was painted using the pattern's visual language.`;
+The pattern should influence the overall aesthetic and color palette.`;
 
     case 'outpaint':
-      // Outpainter: Expand image beyond its borders, continuing the scene naturally
       return `Expand this image beyond its current borders.
 ${prompt}
-Continue the scene naturally in the extended areas:
-- Match the exact art style, color palette, and lighting of the original
-- Maintain perspective lines and vanishing points
-- Extend textures, patterns, and elements seamlessly
-- Keep the same level of detail and quality throughout
-- The extension should be indistinguishable from the original
-- No visible seams or boundaries between original and extended areas`;
+Continue the scene naturally:
+- Match the exact art style, color palette, and lighting
+- Maintain perspective and extend textures seamlessly
+- No visible seams between original and extended areas`;
 
     case 'tune':
-      // Tuner/Enhancer: Adjust and enhance image qualities (like photo editing on steroids)
-      return `Enhance and adjust this image with the following modifications: ${prompt}.
-Apply the adjustments while preserving the original subject and composition.
-Improve overall quality: sharpen details, optimize contrast, enhance colors naturally.
-Remove any noise or artifacts while keeping authentic texture.
-The result should look like a professionally retouched version of the original.`;
+      return `Enhance and adjust this image: ${prompt}.
+Apply adjustments while preserving the original subject.
+Improve quality: sharpen details, optimize contrast, enhance colors naturally.`;
+
+    case 'inpaint':
+      return `Replace the masked area with: ${prompt}.
+Seamlessly blend with the surrounding image.
+Match lighting, perspective, and style perfectly.`;
+
+    case 'style-transfer':
+      return `${stylePrefix}Apply this artistic style to the image: ${prompt}.
+Transform the content while preserving the structure and composition.
+The result should look like it was originally created in this style.`;
+
+    case 'backdrop':
+      return `Change the background to: ${prompt}.
+Keep the subject perfectly extracted with natural edges.
+Blend lighting and shadows to match the new environment.`;
+
+    case 'relight':
+      return `Relight this scene: ${prompt}.
+Adjust shadows, highlights, and color temperature naturally.
+Maintain the subject's appearance while changing the illumination.`;
 
     default:
-      // Default: General text-to-image generation
-      return `Create a high-quality artistic image: ${prompt}. 
-Style: professional digital art with excellent composition, lighting, and detail.
-The image should be visually striking and technically well-executed.`;
+      return `${stylePrefix}Create a high-quality artistic image: ${prompt}. 
+Professional digital art with excellent composition, lighting, and detail.`;
   }
+}
+
+async function uploadToStorage(
+  supabase: ReturnType<typeof createClient>,
+  imageData: string,
+  userId: string,
+  type: string
+): Promise<string> {
+  const timestamp = Date.now();
+  const fileName = `${userId}/${type}/${timestamp}.png`;
+
+  // Convert base64 to Uint8Array
+  const base64Data = imageData.replace(/^data:image\/\w+;base64,/, '');
+  const binaryData = Uint8Array.from(atob(base64Data), c => c.charCodeAt(0));
+
+  const { data, error } = await supabase.storage
+    .from('generations')
+    .upload(fileName, binaryData, {
+      contentType: 'image/png',
+      upsert: false
+    });
+
+  if (error) {
+    console.error('Storage upload error:', error);
+    throw new Error('Failed to upload image to storage');
+  }
+
+  const { data: urlData } = supabase.storage
+    .from('generations')
+    .getPublicUrl(fileName);
+
+  return urlData.publicUrl;
 }
 
 serve(async (req) => {
@@ -91,92 +167,82 @@ serve(async (req) => {
 
   try {
     const params: GenerateRequest = await req.json();
-    const LOVABLE_API_KEY = Deno.env.get('LOVABLE_API_KEY');
-    
-    if (!LOVABLE_API_KEY) {
-      throw new Error('LOVABLE_API_KEY is not configured');
-    }
-
     const enhancedPrompt = buildPrompt(params);
-    console.log(`[generate-image] Type: ${params.type || 'default'}, Prompt length: ${enhancedPrompt.length}`);
 
-    // Build messages array
-    const messages: any[] = [];
-    
-    // Handle different image input scenarios
-    if (params.baseImages && params.baseImages.length > 0) {
-      // Multiple images (for splicer)
-      const content: any[] = [{ type: "text", text: enhancedPrompt }];
-      for (const imageUrl of params.baseImages) {
-        content.push({ type: "image_url", image_url: { url: imageUrl } });
+    console.log(`[generate-image] Type: ${params.type || 'default'}, Prompt: ${enhancedPrompt.substring(0, 100)}...`);
+
+    // Build the request for Imagen 4 Ultra
+    const requestBody: any = {
+      instances: [{ prompt: enhancedPrompt }],
+      parameters: {
+        sampleCount: 1,
+        aspectRatio: params.aspectRatio || "1:1",
+        personGeneration: "allow_adult",
+        safetyFilterLevel: "block_few",
       }
-      messages.push({ role: "user", content });
-    } else if (params.baseImageUrl) {
-      // Single base image
-      const content: any[] = [
-        { type: "text", text: enhancedPrompt },
-        { type: "image_url", image_url: { url: params.baseImageUrl } }
-      ];
-      // Add pattern image if provided
-      if (params.patternImageUrl) {
-        content.push({ type: "image_url", image_url: { url: params.patternImageUrl } });
-      }
-      messages.push({ role: "user", content });
-    } else if (params.patternImageUrl) {
-      // Pattern only (no base image)
-      messages.push({
-        role: "user",
-        content: [
-          { type: "text", text: enhancedPrompt },
-          { type: "image_url", image_url: { url: params.patternImageUrl } }
-        ]
-      });
-    } else {
-      // Text only
-      messages.push({ role: "user", content: enhancedPrompt });
+    };
+
+    // Add negative prompt if provided
+    if (params.negativePrompt) {
+      requestBody.instances[0].negativePrompt = params.negativePrompt;
     }
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
-        messages,
-        modalities: ["image", "text"]
-      }),
-    });
+    // Add reference image for editing operations
+    if (params.baseImageUrl) {
+      requestBody.instances[0].image = { bytesBase64Encoded: params.baseImageUrl.split(',')[1] || params.baseImageUrl };
+    }
+
+    // Add mask for inpainting
+    if (params.maskImageUrl) {
+      requestBody.instances[0].mask = { bytesBase64Encoded: params.maskImageUrl.split(',')[1] || params.maskImageUrl };
+    }
+
+    // Call Imagen 4 Ultra API
+    const response = await callGeminiAPI(
+      'https://generativelanguage.googleapis.com/v1beta/models/imagen-4-ultra-001:predict',
+      requestBody
+    );
 
     if (!response.ok) {
-      console.error(`[generate-image] API error: ${response.status}`);
-      if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
-      if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Payment required" }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-      }
       const errorText = await response.text();
-      console.error(`[generate-image] Error response: ${errorText}`);
-      throw new Error(`AI gateway error: ${response.status}`);
+      console.error(`[generate-image] API error ${response.status}:`, errorText);
+
+      if (response.status === 429) {
+        return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again in a moment.' }), {
+          status: 429,
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      }
+
+      throw new Error(`Imagen API error: ${response.status}`);
     }
 
     const data = await response.json();
-    const imageUrl = data.choices?.[0]?.message?.images?.[0]?.image_url?.url;
+    const generatedImage = data.predictions?.[0]?.bytesBase64Encoded;
 
-    if (!imageUrl) {
+    if (!generatedImage) {
       console.error('[generate-image] No image in response:', JSON.stringify(data));
       throw new Error('No image generated');
     }
 
-    console.log(`[generate-image] Success! Generated image URL length: ${imageUrl.length}`);
+    // Upload to Supabase Storage if userId provided
+    let imageUrl = `data:image/png;base64,${generatedImage}`;
+
+    if (params.userId) {
+      const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
+      const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
+      const supabase = createClient(supabaseUrl, supabaseKey);
+
+      try {
+        imageUrl = await uploadToStorage(supabase, imageUrl, params.userId, params.type || 'text2img');
+        console.log(`[generate-image] Uploaded to storage: ${imageUrl}`);
+      } catch (uploadError) {
+        console.error('[generate-image] Storage upload failed, returning base64:', uploadError);
+        // Continue with base64 URL if upload fails
+      }
+    }
+
+    console.log(`[generate-image] Success!`);
 
     return new Response(JSON.stringify({ imageUrl }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },

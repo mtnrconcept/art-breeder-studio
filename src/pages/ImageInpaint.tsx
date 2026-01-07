@@ -3,7 +3,9 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Paintbrush, Eraser, Undo, Redo, Wand2, RefreshCw, Download, Eye, EyeOff } from 'lucide-react';
+import { Upload, Paintbrush, Eraser, Undo, Redo, Wand2, RefreshCw, Download, Eye, EyeOff, AlertCircle } from 'lucide-react';
+import { inpaintImage } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const ImageInpaint = () => {
     const [image, setImage] = useState<string | null>(null);
@@ -15,8 +17,10 @@ const ImageInpaint = () => {
     const [showMask, setShowMask] = useState(true);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
+    const { toast } = useToast();
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -78,117 +82,82 @@ const ImageInpaint = () => {
         ctx.clearRect(0, 0, canvas.width, canvas.height);
     };
 
-    const handleProcess = () => {
+    // Convert mask to black and white format for API
+    const getMaskDataUrl = (): string | null => {
+        const maskCanvas = maskCanvasRef.current;
+        if (!maskCanvas) return null;
+
+        const maskCtx = maskCanvas.getContext('2d');
+        if (!maskCtx) return null;
+
+        // Create a new canvas for the B&W mask
+        const bwCanvas = document.createElement('canvas');
+        bwCanvas.width = 800;
+        bwCanvas.height = 800;
+        const bwCtx = bwCanvas.getContext('2d');
+        if (!bwCtx) return null;
+
+        // Fill with black (areas to keep)
+        bwCtx.fillStyle = 'black';
+        bwCtx.fillRect(0, 0, 800, 800);
+
+        // Get the original mask data
+        const maskData = maskCtx.getImageData(0, 0, 800, 800);
+        const bwData = bwCtx.getImageData(0, 0, 800, 800);
+
+        // Convert: masked areas become white
+        for (let i = 0; i < maskData.data.length; i += 4) {
+            if (maskData.data[i + 3] > 50) { // If pixel has alpha (was painted)
+                bwData.data[i] = 255;     // R
+                bwData.data[i + 1] = 255; // G
+                bwData.data[i + 2] = 255; // B
+                bwData.data[i + 3] = 255; // A
+            }
+        }
+
+        bwCtx.putImageData(bwData, 0, 0);
+        return bwCanvas.toDataURL('image/png');
+    };
+
+    const handleProcess = async () => {
         if (!image || !prompt.trim()) return;
         setIsProcessing(true);
+        setError(null);
 
-        // Create a composite result that simulates inpainting
-        setTimeout(() => {
-            const maskCanvas = maskCanvasRef.current;
-            if (!maskCanvas || !image) {
-                setIsProcessing(false);
-                return;
+        try {
+            const maskDataUrl = getMaskDataUrl();
+            if (!maskDataUrl) {
+                throw new Error('Please draw a mask on the image first');
             }
 
-            // Create a result canvas that combines the original image with simulated inpainting
-            const resultCanvas = document.createElement('canvas');
-            resultCanvas.width = 800;
-            resultCanvas.height = 800;
-            const ctx = resultCanvas.getContext('2d');
+            const result = await inpaintImage(image, maskDataUrl, prompt);
 
-            if (!ctx) {
-                setIsProcessing(false);
-                return;
+            if (result.success && result.imageUrl) {
+                setResult(result.imageUrl);
+                toast({
+                    title: "Inpainting Complete!",
+                    description: "Your image has been edited successfully",
+                });
+            } else {
+                const errorMsg = result.error || 'Failed to process image';
+                setError(errorMsg);
+                toast({
+                    title: "Processing Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
             }
-
-            // Load the original image
-            const img = new Image();
-            img.crossOrigin = 'anonymous';
-            img.onload = () => {
-                // Draw original image
-                ctx.drawImage(img, 0, 0, 800, 800);
-
-                // Get the mask data
-                const maskCtx = maskCanvas.getContext('2d');
-                if (maskCtx) {
-                    const maskData = maskCtx.getImageData(0, 0, 800, 800);
-                    const resultData = ctx.getImageData(0, 0, 800, 800);
-
-                    // Apply a visual effect in masked areas to simulate inpainting
-                    // This creates a blended effect showing the "replaced" area
-                    for (let i = 0; i < maskData.data.length; i += 4) {
-                        const maskAlpha = maskData.data[i + 3];
-                        if (maskAlpha > 50) { // If this pixel is masked
-                            // Create a subtle color blend to simulate AI-generated content
-                            // Using a gradient effect based on position
-                            const pixelIndex = i / 4;
-                            const x = pixelIndex % 800;
-                            const y = Math.floor(pixelIndex / 800);
-
-                            // Generate colors based on prompt keywords for simulation
-                            const promptLower = prompt.toLowerCase();
-                            let r = 180, g = 160, b = 140; // Default neutral tones
-
-                            if (promptLower.includes('champagne') || promptLower.includes('bouteille')) {
-                                // Champagne bottle colors: dark green/gold
-                                r = 34 + Math.sin(y * 0.05) * 20;
-                                g = 85 + Math.sin(y * 0.05) * 30;
-                                b = 34 + Math.sin(y * 0.05) * 10;
-                            } else if (promptLower.includes('blue') || promptLower.includes('bleu')) {
-                                r = 50 + Math.sin(y * 0.02) * 30;
-                                g = 100 + Math.sin(y * 0.02) * 50;
-                                b = 200 + Math.sin(y * 0.02) * 55;
-                            } else if (promptLower.includes('red') || promptLower.includes('rouge')) {
-                                r = 200 + Math.sin(y * 0.02) * 55;
-                                g = 50 + Math.sin(y * 0.02) * 30;
-                                b = 50 + Math.sin(y * 0.02) * 30;
-                            } else if (promptLower.includes('gold') || promptLower.includes('or') || promptLower.includes('dorée')) {
-                                r = 212 + Math.sin(y * 0.03) * 40;
-                                g = 175 + Math.sin(y * 0.03) * 30;
-                                b = 55 + Math.sin(y * 0.03) * 20;
-                            }
-
-                            // Add some texture/variation
-                            const noise = (Math.random() - 0.5) * 20;
-
-                            // Blend with varying intensity based on mask strength
-                            const blendFactor = Math.min(maskAlpha / 180, 1);
-                            resultData.data[i] = Math.round(resultData.data[i] * (1 - blendFactor) + (r + noise) * blendFactor);
-                            resultData.data[i + 1] = Math.round(resultData.data[i + 1] * (1 - blendFactor) + (g + noise) * blendFactor);
-                            resultData.data[i + 2] = Math.round(resultData.data[i + 2] * (1 - blendFactor) + (b + noise) * blendFactor);
-                        }
-                    }
-
-                    ctx.putImageData(resultData, 0, 0);
-
-                    // Add a subtle label showing this is a simulation
-                    ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
-                    ctx.fillRect(0, 770, 800, 30);
-                    ctx.fillStyle = 'white';
-                    ctx.font = '14px Arial';
-                    ctx.textAlign = 'center';
-                    ctx.fillText(`Simulation: "${prompt}"`, 400, 790);
-                }
-
-                // Convert to data URL and set as result
-                setResult(resultCanvas.toDataURL('image/png'));
-                setIsProcessing(false);
-            };
-
-            img.onerror = () => {
-                // If image loading fails, just show a placeholder
-                ctx.fillStyle = '#1a1a2e';
-                ctx.fillRect(0, 0, 800, 800);
-                ctx.fillStyle = '#eee';
-                ctx.font = '20px Arial';
-                ctx.textAlign = 'center';
-                ctx.fillText(`Inpainting simulation for: "${prompt}"`, 400, 400);
-                setResult(resultCanvas.toDataURL('image/png'));
-                setIsProcessing(false);
-            };
-
-            img.src = image;
-        }, 2000);
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
+            setIsProcessing(false);
+        }
     };
 
     return (
