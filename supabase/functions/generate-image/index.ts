@@ -41,35 +41,37 @@ async function callGeminiAPI(endpoint: string, body: object): Promise<Response> 
 
   for (let i = 0; i < keys.length; i++) {
     const key = keys[i];
+    const isToken = key.startsWith('AQ.');
 
     for (const baseEndpoint of endpoints) {
-      const url = `${baseEndpoint}?key=${key}`;
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': key
-      };
+      const authMethods = isToken
+        ? [
+          { url: baseEndpoint, headers: { 'Authorization': `Bearer ${key}` } },
+          { url: `${baseEndpoint}?key=${key}`, headers: {} }
+        ]
+        : [{ url: `${baseEndpoint}?key=${key}`, headers: { 'x-goog-api-key': key } }];
 
-      try {
-        console.log(`[callGeminiAPI] Attempt ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'}`);
-        const response = await fetch(url, {
-          method: 'POST',
-          headers,
-          body: JSON.stringify(body),
-        });
+      for (const auth of authMethods) {
+        try {
+          console.log(`[callGeminiAPI] Key ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'} via ${auth.headers.Authorization ? 'Bearer' : 'Key Param'}`);
+          const response = await fetch(auth.url, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...auth.headers },
+            body: JSON.stringify(body),
+          });
 
-        if (response.ok) {
-          return response;
+          if (response.ok) return response;
+
+          const errorData = await response.text();
+          console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
+
+          if (response.status === 429) break;
+          if (response.status === 401 || response.status === 403 || response.status === 404) continue;
+
+          return new Response(errorData, { status: response.status });
+        } catch (error) {
+          console.error(`Network error on ${baseEndpoint}:`, error);
         }
-
-        const errorData = await response.text();
-        console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
-
-        if (response.status === 429) break; // Quota hit, try next key
-        if (response.status === 401 || response.status === 403 || response.status === 404) continue; // Try other endpoint
-
-        return new Response(errorData, { status: response.status });
-      } catch (error) {
-        console.error(`Network error on ${baseEndpoint}:`, error);
       }
     }
   }
@@ -185,20 +187,24 @@ serve(async (req) => {
 
     console.log(`[generate-image] Type: ${params.type || 'default'}, Prompt: ${enhancedPrompt.substring(0, 100)}...`);
 
-    // Build the request for Imagen 4 Ultra
+    // Build the request for Imagen 4 Ultra / Gemini 3 Image
     const requestBody: any = {
       instances: [{ prompt: enhancedPrompt }],
       parameters: {
         sampleCount: 1,
-        aspectRatio: params.aspectRatio || "1:1",
         personGeneration: "allow_adult",
         safetyFilterLevel: "block_few",
       }
     };
 
-    // Add negative prompt if provided
+    // Add aspect ratio ONLY for text-to-image (no base image)
+    if (!params.baseImageUrl) {
+      requestBody.parameters.aspectRatio = params.aspectRatio || "1:1";
+    }
+
+    // Add negative prompt in parameters (correct location for Vertex AI Imagen)
     if (params.negativePrompt) {
-      requestBody.instances[0].negativePrompt = params.negativePrompt;
+      requestBody.parameters.negativePrompt = params.negativePrompt;
     }
 
     // Add reference image for editing operations
@@ -211,9 +217,9 @@ serve(async (req) => {
       requestBody.instances[0].mask = { bytesBase64Encoded: params.maskImageUrl.split(',')[1] || params.maskImageUrl };
     }
 
-    // Call Nano Banana Pro (Gemini 3 Image) API via AI Studio endpoint
+    // Call Nano Banana Pro (Gemini 3 Image) API via Vertex AI as primary
     const response = await callGeminiAPI(
-      'https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro:predict',
+      'https://aiplatform.googleapis.com/v1/publishers/google/models/nano-banana-pro:predict',
       requestBody
     );
 

@@ -35,35 +35,37 @@ async function callGeminiAPI(endpoint: string, body: object): Promise<Response> 
 
     for (let i = 0; i < keys.length; i++) {
         const key = keys[i];
+        const isToken = key.startsWith('AQ.');
 
         for (const baseEndpoint of endpoints) {
-            const url = `${baseEndpoint}?key=${key}`;
-            const headers: Record<string, string> = {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': key
-            };
+            const authMethods = isToken
+                ? [
+                    { url: baseEndpoint, headers: { 'Authorization': `Bearer ${key}` } },
+                    { url: `${baseEndpoint}?key=${key}`, headers: {} }
+                ]
+                : [{ url: `${baseEndpoint}?key=${key}`, headers: { 'x-goog-api-key': key } }];
 
-            try {
-                console.log(`[callGeminiAPI] Attempt ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'}`);
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers,
-                    body: JSON.stringify(body),
-                });
+            for (const auth of authMethods) {
+                try {
+                    console.log(`[callGeminiAPI] Key ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'} via ${auth.headers.Authorization ? 'Bearer' : 'Key Param'}`);
+                    const response = await fetch(auth.url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', ...auth.headers },
+                        body: JSON.stringify(body),
+                    });
 
-                if (response.ok) {
-                    return response;
+                    if (response.ok) return response;
+
+                    const errorData = await response.text();
+                    console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
+
+                    if (response.status === 429) break;
+                    if (response.status === 401 || response.status === 403 || response.status === 404) continue;
+
+                    return new Response(errorData, { status: response.status });
+                } catch (error) {
+                    console.error(`Network error on ${baseEndpoint}:`, error);
                 }
-
-                const errorData = await response.text();
-                console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
-
-                if (response.status === 429) break;
-                if (response.status === 401 || response.status === 403 || response.status === 404) continue;
-
-                return new Response(errorData, { status: response.status });
-            } catch (error) {
-                console.error(`Network error on ${baseEndpoint}:`, error);
             }
         }
     }
@@ -185,9 +187,9 @@ serve(async (req) => {
             requestBody.instances[0].image = { bytesBase64Encoded: imageData };
         }
 
-        // Start video generation (async operation)
+        // Start video generation (async operation) via Vertex AI
         const response = await callGeminiAPI(
-            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateVideo',
+            'https://aiplatform.googleapis.com/v1/publishers/google/models/gemini-3-pro-preview:generateVideo',
             requestBody
         );
 
