@@ -4,99 +4,100 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Card } from '@/components/ui/card';
+import { Progress } from '@/components/ui/progress';
 import { useAuth } from '@/contexts/AuthContext';
-import { useToast } from '@/hooks/use-toast';
 import { 
   Settings, 
   Trash2, 
-  Pause, 
-  Play, 
   HelpCircle, 
   History, 
   Download, 
-  Plus,
   Loader2,
   Upload,
-  ImageIcon,
-  Shuffle,
-  Maximize2,
+  Video,
   Home,
-  RotateCcw
+  X,
+  Play
 } from 'lucide-react';
 
-interface ToolLayoutProps {
+interface VideoToolLayoutProps {
   children?: ReactNode;
   title: string;
   description: string;
-  prompt: string;
-  setPrompt: (value: string) => void;
-  generatedImage: string | null;
-  baseImage?: string | null;
-  onBaseImageChange?: (image: string | null) => void;
-  isGenerating: boolean;
+  icon: ReactNode;
+  iconGradient: string;
+  prompt?: string;
+  setPrompt?: (value: string) => void;
+  sourceMedia?: string | null;
+  sourceMediaType?: 'image' | 'video';
+  onSourceMediaChange?: (media: string | null) => void;
+  resultVideo: string | null;
+  isProcessing: boolean;
   progress?: number;
   onGenerate: () => void;
-  onVary?: () => void;
-  onEnhance?: () => void;
-  onClear?: () => void;
-  showBaseImage?: boolean;
   generateLabel?: string;
+  generateDisabled?: boolean;
   promptPlaceholder?: string;
-  historyItems?: string[];
-  onHistorySelect?: (item: string) => void;
   controlsPanel?: ReactNode;
   hidePrompt?: boolean;
+  hideSourceMedia?: boolean;
+  sourceMediaLabel?: string;
+  historyItems?: string[];
+  onHistorySelect?: (item: string) => void;
 }
 
-export const ToolLayout = ({
+export const VideoToolLayout = ({
   title,
   description,
-  prompt,
+  icon,
+  iconGradient,
+  prompt = '',
   setPrompt,
-  generatedImage,
-  baseImage,
-  onBaseImageChange,
-  isGenerating,
+  sourceMedia,
+  sourceMediaType = 'image',
+  onSourceMediaChange,
+  resultVideo,
+  isProcessing,
   progress = 0,
   onGenerate,
-  onVary,
-  onEnhance,
-  onClear,
-  showBaseImage = true,
   generateLabel = 'Generate',
+  generateDisabled = false,
   promptPlaceholder = 'Describe what you want to create...',
-  historyItems = [],
-  onHistorySelect,
   controlsPanel,
   hidePrompt = false,
-}: ToolLayoutProps) => {
+  hideSourceMedia = false,
+  sourceMediaLabel = 'Source',
+  historyItems = [],
+  onHistorySelect,
+}: VideoToolLayoutProps) => {
   const { user } = useAuth();
   const navigate = useNavigate();
-  const { toast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const [isPaused, setIsPaused] = useState(false);
+  const [videoKey, setVideoKey] = useState(0);
 
-  const handleBaseImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (file && onBaseImageChange) {
+    if (file && onSourceMediaChange) {
       const reader = new FileReader();
       reader.onloadend = () => {
-        onBaseImageChange(reader.result as string);
+        onSourceMediaChange(reader.result as string);
       };
       reader.readAsDataURL(file);
     }
   };
 
   const handleDownload = () => {
-    if (!generatedImage) return;
+    if (!resultVideo) return;
     const link = document.createElement('a');
-    link.href = generatedImage;
-    link.download = `creation-${Date.now()}.png`;
+    link.href = resultVideo;
+    link.download = `video-${Date.now()}.mp4`;
+    link.target = '_blank';
     link.click();
   };
 
   const handleClear = () => {
-    onClear?.();
+    onSourceMediaChange?.(null);
+    setVideoKey(prev => prev + 1);
   };
 
   if (!user) {
@@ -110,7 +111,7 @@ export const ToolLayout = ({
       
       <main className="pt-20 pb-8 px-4">
         <div className="max-w-7xl mx-auto">
-          {/* Top Toolbar - Artbreeder style */}
+          {/* Top Toolbar */}
           <div className="flex items-center justify-between mb-6">
             <Button 
               variant="ghost" 
@@ -128,15 +129,6 @@ export const ToolLayout = ({
               <Button variant="ghost" size="icon" className="rounded-full" onClick={handleClear} title="Clear">
                 <Trash2 className="h-4 w-4" />
               </Button>
-              <Button 
-                variant="ghost" 
-                size="icon" 
-                className="rounded-full"
-                onClick={() => setIsPaused(!isPaused)}
-                title={isPaused ? 'Resume' : 'Pause'}
-              >
-                {isPaused ? <Play className="h-4 w-4" /> : <Pause className="h-4 w-4" />}
-              </Button>
               <Button variant="ghost" size="icon" className="rounded-full" title="Help">
                 <HelpCircle className="h-4 w-4" />
               </Button>
@@ -148,51 +140,58 @@ export const ToolLayout = ({
                 size="icon" 
                 className="rounded-full" 
                 onClick={handleDownload}
-                disabled={!generatedImage}
+                disabled={!resultVideo}
                 title="Download"
               >
                 <Download className="h-4 w-4" />
               </Button>
             </div>
 
-            <div className="w-10" /> {/* Spacer for balance */}
+            <div className="w-10" />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 min-h-[calc(100vh-180px)]">
             {/* Center - Main Canvas */}
             <div className="lg:col-span-8 flex flex-col">
               <Card className="flex-1 glass overflow-hidden relative min-h-[400px]">
-                {generatedImage ? (
-                  <div 
-                    key={generatedImage} 
-                    className="relative w-full h-full flex items-center justify-center p-4 animate-fade-in"
-                  >
-                    <img 
-                      src={generatedImage} 
-                      alt="Generated" 
-                      className="max-w-full max-h-full object-contain rounded-lg shadow-2xl transition-all duration-500"
+                {resultVideo ? (
+                  <div className="relative w-full h-full flex items-center justify-center p-4 animate-fade-in">
+                    <video 
+                      key={videoKey}
+                      src={resultVideo} 
+                      controls 
+                      autoPlay 
+                      loop 
+                      className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
                     />
-                    {isGenerating && (
-                      <div className="absolute inset-0 bg-background/80 flex items-center justify-center animate-fade-in">
+                    {isProcessing && (
+                      <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
                         <div className="text-center">
                           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-                          <p className="text-muted-foreground">Generating... {progress}%</p>
+                          <p className="text-muted-foreground">Processing... {progress}%</p>
+                          <Progress value={progress} className="w-48 mt-3" />
                         </div>
                       </div>
                     )}
                   </div>
                 ) : (
                   <div className="w-full h-full canvas-grid flex items-center justify-center">
-                    {isGenerating ? (
-                      <div className="text-center animate-fade-in">
+                    {isProcessing ? (
+                      <div className="text-center">
                         <Loader2 className="h-16 w-16 animate-spin text-primary mx-auto mb-4" />
-                        <p className="text-muted-foreground">Generating... {progress}%</p>
+                        <p className="text-muted-foreground">Processing... {progress}%</p>
+                        <Progress value={progress} className="w-48 mt-3 mx-auto" />
+                        <p className="text-xs text-muted-foreground/70 mt-3">
+                          This may take 2-5 minutes
+                        </p>
                       </div>
                     ) : (
                       <div className="text-center">
-                        <ImageIcon className="h-16 w-16 text-muted-foreground/30 mx-auto mb-4" />
-                        <p className="text-muted-foreground">{title}</p>
-                        <p className="text-sm text-muted-foreground/70 mt-2">
+                        <div className={`w-20 h-20 rounded-2xl ${iconGradient} flex items-center justify-center mx-auto mb-6`}>
+                          {icon}
+                        </div>
+                        <h2 className="text-2xl font-bold mb-2">{title}</h2>
+                        <p className="text-muted-foreground max-w-md mx-auto">
                           {description}
                         </p>
                       </div>
@@ -201,62 +200,58 @@ export const ToolLayout = ({
                 )}
               </Card>
 
-              {/* Description + Base Image Section - Artbreeder style */}
+              {/* Controls Section */}
               <div className="mt-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-                {/* Description */}
-                <div className="md:col-span-2">
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="font-semibold text-sm">Description</span>
-                    <Button variant="ghost" size="icon" className="h-6 w-6 rounded-full">
-                      <Plus className="h-3 w-3" />
-                    </Button>
-                  </div>
-                  {!hidePrompt && (
-                    <Textarea
-                      placeholder={promptPlaceholder}
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      className="min-h-[100px] resize-none bg-card/50 border-border/50 text-sm"
-                    />
+                {/* Description / Prompt */}
+                <div className="md:col-span-2 space-y-4">
+                  {!hidePrompt && setPrompt && (
+                    <div>
+                      <span className="font-semibold text-sm mb-2 block">Description</span>
+                      <Textarea
+                        placeholder={promptPlaceholder}
+                        value={prompt}
+                        onChange={(e) => setPrompt(e.target.value)}
+                        className="min-h-[100px] resize-none bg-card/50 border-border/50 text-sm"
+                      />
+                    </div>
                   )}
                   {controlsPanel}
                 </div>
 
-                {/* Base Image */}
-                {showBaseImage && (
+                {/* Source Media */}
+                {!hideSourceMedia && onSourceMediaChange && (
                   <div>
-                    <span className="font-semibold text-sm mb-2 block">Base Image</span>
+                    <span className="font-semibold text-sm mb-2 block">{sourceMediaLabel}</span>
                     <input
                       ref={fileInputRef}
                       type="file"
-                      accept="image/*"
-                      onChange={handleBaseImageUpload}
+                      accept={sourceMediaType === 'video' ? 'video/*' : 'image/*'}
+                      onChange={handleMediaUpload}
                       className="hidden"
                     />
                     
-                    {baseImage ? (
+                    {sourceMedia ? (
                       <div className="relative group">
-                        <img 
-                          src={baseImage} 
-                          alt="Base" 
-                          className="w-full aspect-square object-cover rounded-lg border border-border/50"
-                        />
+                        {sourceMediaType === 'video' ? (
+                          <video 
+                            src={sourceMedia} 
+                            className="w-full aspect-video object-cover rounded-lg border border-border/50"
+                            muted
+                          />
+                        ) : (
+                          <img 
+                            src={sourceMedia} 
+                            alt="Source" 
+                            className="w-full aspect-square object-cover rounded-lg border border-border/50"
+                          />
+                        )}
                         <Button
                           variant="destructive"
                           size="icon"
                           className="absolute top-2 right-2 h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => onBaseImageChange?.(null)}
+                          onClick={() => onSourceMediaChange(null)}
                         >
-                          <Trash2 className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="absolute bottom-2 right-2 h-6 w-6 bg-background/80 opacity-0 group-hover:opacity-100 transition-opacity"
-                          onClick={() => onHistorySelect?.(baseImage)}
-                          title="Refresh"
-                        >
-                          <RotateCcw className="h-3 w-3" />
+                          <X className="h-3 w-3" />
                         </Button>
                       </div>
                     ) : (
@@ -272,44 +267,26 @@ export const ToolLayout = ({
                 )}
               </div>
 
-              {/* Action Buttons - Artbreeder style */}
+              {/* Action Button */}
               <div className="flex items-center justify-center gap-3 mt-6">
-                {onVary && (
-                  <Button 
-                    variant="outline" 
-                    onClick={onVary}
-                    disabled={!generatedImage || isGenerating}
-                    className="rounded-full px-6 bg-secondary/50 border-border/50 hover:bg-secondary"
-                  >
-                    <Shuffle className="mr-2 h-4 w-4" />
-                    Vary
-                  </Button>
-                )}
                 <Button 
                   onClick={onGenerate}
-                  disabled={isGenerating}
-                  className="rounded-full px-8 gradient-primary text-white font-medium"
+                  disabled={isProcessing || generateDisabled}
+                  className="rounded-full px-10 gradient-primary text-white font-medium text-lg py-6"
+                  size="lg"
                 >
-                  {isGenerating ? (
+                  {isProcessing ? (
                     <>
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating...
+                      <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+                      Processing...
                     </>
                   ) : (
-                    generateLabel
+                    <>
+                      <Play className="mr-2 h-5 w-5" />
+                      {generateLabel}
+                    </>
                   )}
                 </Button>
-                {onEnhance && (
-                  <Button 
-                    variant="outline"
-                    onClick={onEnhance}
-                    disabled={!generatedImage || isGenerating}
-                    className="rounded-full px-6 bg-emerald-500/20 border-emerald-500/50 hover:bg-emerald-500/30 text-emerald-400"
-                  >
-                    <Maximize2 className="mr-2 h-4 w-4" />
-                    Enhance
-                  </Button>
-                )}
               </div>
             </div>
 
@@ -327,13 +304,16 @@ export const ToolLayout = ({
                       <button
                         key={index}
                         onClick={() => onHistorySelect?.(item)}
-                        className="aspect-square rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-colors"
+                        className="aspect-video rounded-lg overflow-hidden border border-border/50 hover:border-primary/50 transition-colors relative group"
                       >
-                        <img 
+                        <video 
                           src={item} 
-                          alt={`History ${index + 1}`} 
                           className="w-full h-full object-cover"
+                          muted
                         />
+                        <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                          <Play className="h-6 w-6 text-white" />
+                        </div>
                       </button>
                     ))}
                   </div>
