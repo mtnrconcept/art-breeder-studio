@@ -3,15 +3,17 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, Video, Wand2, RefreshCw, Download, Play, Plus, X, Users } from 'lucide-react';
+import { Upload, Video, Wand2, RefreshCw, Download, Play, Plus, X, Users, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const MultiImageVideo = () => {
     const [images, setImages] = useState<{ id: string; url: string; role: string }[]>([]);
     const [prompt, setPrompt] = useState('');
     const [duration, setDuration] = useState('5');
     const [quality, setQuality] = useState('pro');
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
+    const { isGenerating, videoUrl: generatedVideo, error, createVideo, setVideoUrl: setGeneratedVideo } = useVideoGeneration();
+    const { toast } = useToast();
 
     const roles = [
         { id: 'character', label: 'Character' },
@@ -45,14 +47,12 @@ const MultiImageVideo = () => {
         setImages(prev => prev.map(img => img.id === id ? { ...img, role } : img));
     };
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (images.length === 0 || !prompt.trim()) return;
-        setIsGenerating(true);
-
-        setTimeout(() => {
-            setGeneratedVideo('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setIsGenerating(false);
-        }, 5000);
+        await createVideo(prompt, {
+            duration: parseInt(duration),
+            imageUrl: images[0].url,
+        });
     };
 
     return (

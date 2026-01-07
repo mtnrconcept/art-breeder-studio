@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Lightbulb, Wand2, RefreshCw } from 'lucide-react';
+import { Upload, Lightbulb, Wand2, RefreshCw, AlertCircle } from 'lucide-react';
+import { generateImage, generateVideo } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const RelightScene = () => {
     const [media, setMedia] = useState<string | null>(null);
@@ -14,6 +16,8 @@ const RelightScene = () => {
     const [shadowSoftness, setShadowSoftness] = useState([50]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleMediaUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -39,15 +43,53 @@ const RelightScene = () => {
         setLightY(Math.round(y));
     };
 
-    const handleProcess = () => {
+    const handleProcess = async () => {
         if (!media) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult(mediaType === 'video'
-                ? 'https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4'
-                : 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800');
+        setError(null);
+
+        try {
+            const relightPrompt = `Relight this ${mediaType}. Position a new light source at ${lightX}% horizontal, ${lightY}% vertical. Color: ${lightColor}. Intensity: ${lightIntensity[0]}%. Shadow softness: ${shadowSoftness[0]}%. Ensure realistic interaction with surfaces and shadows.`;
+
+            let res;
+            if (mediaType === 'image') {
+                res = await generateImage({
+                    prompt: relightPrompt,
+                    baseImageUrl: media,
+                    type: 'tune',
+                });
+            } else {
+                res = await generateVideo(relightPrompt, {
+                    imageUrl: media,
+                });
+            }
+
+            if (res.success && (res.imageUrl || res.videoUrl)) {
+                setResult(res.imageUrl || res.videoUrl || null);
+                toast({
+                    title: "Relight Successful!",
+                    description: `The ${mediaType} has been relit as requested.`,
+                });
+            } else {
+                const errorMsg = res.error || `Failed to relight ${mediaType}`;
+                setError(errorMsg);
+                toast({
+                    title: "Process Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 3000);
+        }
     };
 
     const lightColors = ['#ffffff', '#fff5e6', '#ffe4c4', '#add8e6', '#90ee90', '#ffb6c1', '#dda0dd'];

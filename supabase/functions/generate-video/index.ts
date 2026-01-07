@@ -28,27 +28,43 @@ async function callGeminiAPI(endpoint: string, body: object): Promise<Response> 
 
     const keys = [apiKey1, apiKey2].filter(Boolean) as string[];
 
+    const endpoints = [
+        endpoint,
+        endpoint.replace('aiplatform.googleapis.com/v1/publishers/google', 'generativelanguage.googleapis.com/v1beta')
+    ];
+
     for (let i = 0; i < keys.length; i++) {
-        try {
-            const response = await fetch(`${endpoint}?key=${keys[i]}`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(body),
-            });
+        const key = keys[i];
 
-            if (response.ok) {
-                return response;
+        for (const baseEndpoint of endpoints) {
+            const url = `${baseEndpoint}?key=${key}`;
+            const headers: Record<string, string> = {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': key
+            };
+
+            try {
+                console.log(`[callGeminiAPI] Attempt ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'}`);
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers,
+                    body: JSON.stringify(body),
+                });
+
+                if (response.ok) {
+                    return response;
+                }
+
+                const errorData = await response.text();
+                console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
+
+                if (response.status === 429) break;
+                if (response.status === 401 || response.status === 403 || response.status === 404) continue;
+
+                return new Response(errorData, { status: response.status });
+            } catch (error) {
+                console.error(`Network error on ${baseEndpoint}:`, error);
             }
-
-            if (response.status === 429 || response.status === 403) {
-                console.log(`API key ${i + 1} failed with status ${response.status}, trying fallback...`);
-                continue;
-            }
-
-            return response;
-        } catch (error) {
-            console.error(`API key ${i + 1} error:`, error);
-            if (i === keys.length - 1) throw error;
         }
     }
 
@@ -171,22 +187,26 @@ serve(async (req) => {
 
         // Start video generation (async operation)
         const response = await callGeminiAPI(
-            'https://generativelanguage.googleapis.com/v1beta/models/veo-3-preview:generateVideo',
+            'https://generativelanguage.googleapis.com/v1beta/models/gemini-3-pro-preview:generateVideo',
             requestBody
         );
 
         if (!response.ok) {
             const errorText = await response.text();
-            console.error(`[generate-video] API error ${response.status}:`, errorText);
+            console.error(`[generate-video] API error ${response.status} from Veo:`, errorText);
 
-            if (response.status === 429) {
-                return new Response(JSON.stringify({ error: 'Rate limit exceeded. Please try again later.' }), {
-                    status: 429,
-                    headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-                });
+            let errorMessage = `Veo API error: ${response.status}`;
+            try {
+                const errorJson = JSON.parse(errorText);
+                errorMessage = errorJson.error?.message || errorMessage;
+            } catch (p) {
+                // Not JSON
             }
 
-            throw new Error(`Veo API error: ${response.status}`);
+            return new Response(JSON.stringify({ error: errorMessage }), {
+                status: response.status === 429 ? 429 : 500,
+                headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+            });
         }
 
         const operationData = await response.json();
@@ -199,35 +219,10 @@ serve(async (req) => {
 
         console.log(`[generate-video] Operation started: ${operationName}`);
 
-        // Poll for completion
-        const result = await pollForResult(operationName, Deno.env.get('GEMINI_API_KEY')!);
-
-        const generatedVideo = result.response?.videos?.[0]?.bytesBase64Encoded;
-
-        if (!generatedVideo) {
-            console.error('[generate-video] No video in result:', JSON.stringify(result));
-            throw new Error('No video generated');
-        }
-
-        // Upload to Supabase Storage if userId provided
-        let videoUrl = `data:video/mp4;base64,${generatedVideo}`;
-
-        if (params.userId) {
-            const supabaseUrl = Deno.env.get('SUPABASE_URL')!;
-            const supabaseKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!;
-            const supabase = createClient(supabaseUrl, supabaseKey);
-
-            try {
-                videoUrl = await uploadVideoToStorage(supabase, videoUrl, params.userId);
-                console.log(`[generate-video] Uploaded to storage: ${videoUrl}`);
-            } catch (uploadError) {
-                console.error('[generate-video] Storage upload failed:', uploadError);
-            }
-        }
-
-        console.log(`[generate-video] Success!`);
-
-        return new Response(JSON.stringify({ videoUrl }), {
+        return new Response(JSON.stringify({
+            operationName,
+            status: 'processing'
+        }), {
             headers: { ...corsHeaders, 'Content-Type': 'application/json' },
         });
     } catch (error) {

@@ -8,33 +8,32 @@ import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/contexts/AuthContext';
-import { useImageGeneration } from '@/hooks/useImageGeneration';
-import { supabase } from '@/integrations/supabase/client';
 import { useToast } from '@/hooks/use-toast';
-import { 
-  Settings, 
-  Trash2, 
-  Pause, 
-  Play, 
-  HelpCircle, 
-  History, 
-  Download, 
+import {
+  Settings,
+  Trash2,
+  Pause,
+  Play,
+  HelpCircle,
+  History,
+  Download,
   Plus,
   Sparkles,
   Loader2,
   Upload,
   ImageIcon,
   Shuffle,
-  Maximize2
+  Maximize2,
+  AlertCircle
 } from 'lucide-react';
+import { composeImages, textToImage } from '@/lib/gemini';
 
 const Composer = () => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { generateImage, isGenerating, progress } = useImageGeneration();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  
+
   const [prompt, setPrompt] = useState('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [baseImage, setBaseImage] = useState<string | null>(null);
@@ -44,6 +43,8 @@ const Composer = () => {
   const [activeTab, setActiveTab] = useState('style');
   const [isPaused, setIsPaused] = useState(false);
   const [historyItems, setHistoryItems] = useState<string[]>([]);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!user) {
@@ -61,26 +62,43 @@ const Composer = () => {
       return;
     }
 
-    // Composer: Mix images and text with precision - compose visual elements on a canvas
-    const composerPrompt = baseImage 
-      ? `Compose this image with the following creative direction: ${prompt}. Blend the visual elements with ${styleStrength[0]}% style influence, preserving ${faceStrength[0]}% of facial features if present, and ${contentStrength[0]}% content fidelity.`
-      : prompt;
+    setIsGenerating(true);
+    setError(null);
 
-    const result = await generateImage({
-      prompt: composerPrompt,
-      baseImageUrl: baseImage || undefined,
-      styleStrength: styleStrength[0],
-      faceStrength: faceStrength[0],
-      contentStrength: contentStrength[0]
-    });
+    try {
+      const result = baseImage
+        ? await composeImages([baseImage], prompt, {
+          styleStrength: styleStrength[0],
+          contentStrength: contentStrength[0]
+        })
+        : await textToImage(prompt);
 
-    if (result) {
-      setGeneratedImage(result.imageUrl);
-      setHistoryItems((prev) => [result.imageUrl, ...prev.slice(0, 9)]);
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
+        setHistoryItems((prev) => [result.imageUrl!, ...prev.slice(0, 9)]);
+        toast({
+          title: 'Image generated!',
+          description: 'Your creation has been saved to your gallery.'
+        });
+      } else {
+        const errorMsg = result.error || 'Failed to generate image';
+        setError(errorMsg);
+        toast({
+          variant: 'destructive',
+          title: 'Generation Failed',
+          description: errorMsg
+        });
+      }
+    } catch (err) {
+      const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+      setError(errorMsg);
       toast({
-        title: 'Image generated!',
-        description: 'Your creation has been saved to your gallery.'
+        variant: 'destructive',
+        title: 'Error',
+        description: errorMsg
       });
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -97,25 +115,31 @@ const Composer = () => {
 
   const handleVary = async () => {
     if (!generatedImage) return;
-    const result = await generateImage({
-      prompt: `Create a variation: ${prompt}`,
-      baseImageUrl: generatedImage
-    });
-    if (result) {
-      setGeneratedImage(result.imageUrl);
-      setHistoryItems((prev) => [result.imageUrl, ...prev.slice(0, 9)]);
+    setIsGenerating(true);
+    try {
+      const result = await textToImage(`Variation of: ${prompt}`, { style: 'photorealistic' });
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
+        setHistoryItems((prev) => [result.imageUrl!, ...prev.slice(0, 9)]);
+      }
+    } finally {
+      setIsGenerating(false);
     }
   };
 
   const handleEnhance = async () => {
     if (!generatedImage) return;
-    const result = await generateImage({
-      prompt: 'Enhance and improve the quality of this image, make it more detailed and vibrant',
-      baseImageUrl: generatedImage
-    });
-    if (result) {
-      setGeneratedImage(result.imageUrl);
-      setHistoryItems((prev) => [result.imageUrl, ...prev.slice(0, 9)]);
+    setIsGenerating(true);
+    try {
+      const result = await textToImage('Enhance and improve the quality of this image, make it more detailed and vibrant', {
+        style: 'photorealistic'
+      });
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
+        setHistoryItems((prev) => [result.imageUrl!, ...prev.slice(0, 9)]);
+      }
+    } finally {
+      setIsGenerating(false);
     }
   };
 
@@ -138,11 +162,11 @@ const Composer = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-20 pb-8 px-4">
         <div className="max-w-7xl mx-auto">
           <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 h-[calc(100vh-120px)]">
-            
+
             {/* Left Panel - Controls */}
             <div className="lg:col-span-3 space-y-4 overflow-y-auto">
               {/* Prompt Input */}
@@ -154,15 +178,15 @@ const Composer = () => {
                   onChange={(e) => setPrompt(e.target.value)}
                   className="min-h-[120px] resize-none bg-input border-border"
                 />
-                <Button 
-                  onClick={handleGenerate} 
+                <Button
+                  onClick={handleGenerate}
                   disabled={isGenerating || !prompt.trim()}
                   className="w-full mt-4 gradient-primary"
                 >
                   {isGenerating ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      Generating... {progress}%
+                      Generating...
                     </>
                   ) : (
                     <>
@@ -183,12 +207,12 @@ const Composer = () => {
                   onChange={handleBaseImageUpload}
                   className="hidden"
                 />
-                
+
                 {baseImage ? (
                   <div className="relative group">
-                    <img 
-                      src={baseImage} 
-                      alt="Base" 
+                    <img
+                      src={baseImage}
+                      alt="Base"
                       className="w-full h-32 object-cover rounded-lg"
                     />
                     <Button
@@ -218,7 +242,7 @@ const Composer = () => {
                       <TabsTrigger value="face">Face</TabsTrigger>
                       <TabsTrigger value="content">Content</TabsTrigger>
                     </TabsList>
-                    
+
                     <TabsContent value="style" className="mt-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
@@ -233,7 +257,7 @@ const Composer = () => {
                         />
                       </div>
                     </TabsContent>
-                    
+
                     <TabsContent value="face" className="mt-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
@@ -248,7 +272,7 @@ const Composer = () => {
                         />
                       </div>
                     </TabsContent>
-                    
+
                     <TabsContent value="content" className="mt-4">
                       <div className="space-y-2">
                         <div className="flex justify-between text-sm">
@@ -273,16 +297,16 @@ const Composer = () => {
               <Card className="flex-1 glass overflow-hidden relative">
                 {generatedImage ? (
                   <div className="relative w-full h-full">
-                    <img 
-                      src={generatedImage} 
-                      alt="Generated" 
+                    <img
+                      src={generatedImage}
+                      alt="Generated"
                       className="w-full h-full object-contain"
                     />
                     {isGenerating && (
                       <div className="absolute inset-0 bg-background/80 flex items-center justify-center">
                         <div className="text-center">
                           <Loader2 className="h-12 w-12 animate-spin text-primary mx-auto mb-4" />
-                          <p className="text-muted-foreground">Generating... {progress}%</p>
+                          <p className="text-muted-foreground">Generating...</p>
                         </div>
                       </div>
                     )}
@@ -309,9 +333,9 @@ const Composer = () => {
                   <Button variant="ghost" size="icon" onClick={handleClear} title="Clear">
                     <Trash2 className="h-5 w-5" />
                   </Button>
-                  <Button 
-                    variant="ghost" 
-                    size="icon" 
+                  <Button
+                    variant="ghost"
+                    size="icon"
                     onClick={() => setIsPaused(!isPaused)}
                     title={isPaused ? 'Resume' : 'Pause'}
                   >
@@ -323,15 +347,15 @@ const Composer = () => {
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     onClick={handleVary}
                     disabled={!generatedImage || isGenerating}
                   >
                     <Shuffle className="mr-2 h-4 w-4" />
                     Vary
                   </Button>
-                  <Button 
+                  <Button
                     variant="outline"
                     onClick={handleEnhance}
                     disabled={!generatedImage || isGenerating}
@@ -339,8 +363,8 @@ const Composer = () => {
                     <Maximize2 className="mr-2 h-4 w-4" />
                     Enhance
                   </Button>
-                  <Button 
-                    variant="outline" 
+                  <Button
+                    variant="outline"
                     size="icon"
                     onClick={handleDownload}
                     disabled={!generatedImage}
@@ -359,7 +383,7 @@ const Composer = () => {
                   <History className="h-5 w-5 text-muted-foreground" />
                   <span className="font-medium">History</span>
                 </div>
-                
+
                 {historyItems.length > 0 ? (
                   <div className="grid grid-cols-2 gap-2">
                     {historyItems.map((item, index) => (
@@ -368,9 +392,9 @@ const Composer = () => {
                         onClick={() => setGeneratedImage(item)}
                         className="aspect-square rounded-lg overflow-hidden border border-border hover:border-primary/50 transition-colors"
                       >
-                        <img 
-                          src={item} 
-                          alt={`History ${index + 1}`} 
+                        <img
+                          src={item}
+                          alt={`History ${index + 1}`}
                           className="w-full h-full object-cover"
                         />
                       </button>

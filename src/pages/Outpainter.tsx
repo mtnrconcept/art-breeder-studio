@@ -5,8 +5,8 @@ import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Upload, Loader2, Download, Wand2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight } from 'lucide-react';
+import { Upload, Loader2, Download, Wand2, ArrowUp, ArrowDown, ArrowLeft, ArrowRight, AlertCircle } from 'lucide-react';
+import { outpaintImage } from '@/lib/gemini';
 
 const Outpainter = () => {
   const { user } = useAuth();
@@ -15,7 +15,8 @@ const Outpainter = () => {
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
   const [prompt, setPrompt] = useState('');
-  
+  const [error, setError] = useState<string | null>(null);
+
   // Outpaint parameters
   const [direction, setDirection] = useState<'all' | 'up' | 'down' | 'left' | 'right'>('all');
   const [expansionAmount, setExpansionAmount] = useState(50);
@@ -41,45 +42,28 @@ const Outpainter = () => {
     }
 
     setIsGenerating(true);
+    setError(null);
     try {
-      // Outpainter: Expand image beyond borders like Artbreeder's outpainter
-      const directionMap: Record<string, string> = {
-        'all': 'Expand equally in all four directions (top, bottom, left, right)',
-        'up': 'Expand upward, adding more sky/ceiling/background above',
-        'down': 'Expand downward, adding more ground/floor/foreground below',
-        'left': 'Expand to the left, continuing the scene leftward',
-        'right': 'Expand to the right, continuing the scene rightward'
-      };
+      const result = await outpaintImage(
+        sourceImage,
+        prompt || "Continue the scene naturally in the specified direction.",
+        direction,
+        expansionAmount
+      );
 
-      const outpaintPrompt = `${directionMap[direction] || directionMap['all']}. Expansion amount: ${expansionAmount}% of original size. ${prompt ? `Scene extension guidance: ${prompt}.` : 'Continue the existing scene naturally.'} 
-
-Critical requirements:
-- Match the exact art style, brushwork, and rendering technique
-- Continue perspective lines and maintain correct vanishing points  
-- Seamlessly extend all textures and patterns
-- Match lighting direction, intensity, and color temperature exactly
-- No visible seam between original and extended areas
-- Maintain consistent level of detail throughout`;
-
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: {
-          prompt: outpaintPrompt,
-          baseImageUrl: sourceImage,
-          type: 'outpaint',
-          direction,
-          expansionAmount
-        }
-      });
-
-      if (error) throw error;
-
-      if (data?.imageUrl) {
-        setGeneratedImage(data.imageUrl);
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
         toast({ title: "Image étendue avec succès !" });
+      } else {
+        const errorMsg = result.error || "Erreur lors de l'extension";
+        setError(errorMsg);
+        toast({ title: errorMsg, variant: "destructive" });
       }
     } catch (error) {
       console.error('Outpaint error:', error);
-      toast({ title: "Erreur lors de l'extension", variant: "destructive" });
+      const errorMsg = error instanceof Error ? error.message : "Erreur lors de l'extension";
+      setError(errorMsg);
+      toast({ title: errorMsg, variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
@@ -107,7 +91,7 @@ Critical requirements:
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -128,9 +112,9 @@ Critical requirements:
                 {sourceImage ? (
                   <div className="relative">
                     <img src={sourceImage} alt="Source" className="w-full rounded-lg" />
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
+                    <Button
+                      variant="destructive"
+                      size="sm"
                       className="absolute top-2 right-2"
                       onClick={() => {
                         setSourceImage(null);
@@ -157,7 +141,7 @@ Critical requirements:
               {/* Controls */}
               <div className="glass-panel p-6 space-y-6">
                 <h2 className="text-lg font-semibold">Paramètres d'extension</h2>
-                
+
                 <div>
                   <label className="text-sm text-muted-foreground mb-2 block">Description (optionnel)</label>
                   <Input
@@ -200,7 +184,7 @@ Critical requirements:
                   />
                 </div>
 
-                <Button 
+                <Button
                   onClick={handleOutpaint}
                   disabled={isGenerating || !sourceImage}
                   className="w-full gradient-primary"
@@ -231,7 +215,7 @@ Critical requirements:
                   </Button>
                 )}
               </div>
-              
+
               <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
                 {generatedImage ? (
                   <img src={generatedImage} alt="Extended image" className="w-full h-full object-contain" />

@@ -6,8 +6,8 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Download, Palette, Sparkles } from 'lucide-react';
+import { Loader2, Download, Palette, Sparkles, AlertCircle } from 'lucide-react';
+import { patternGenerate } from '@/lib/gemini';
 
 const Patterns = () => {
   const { user } = useAuth();
@@ -15,7 +15,8 @@ const Patterns = () => {
   const [prompt, setPrompt] = useState('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  
+  const [error, setError] = useState<string | null>(null);
+
   // Pattern parameters
   const [patternType, setPatternType] = useState('geometric');
   const [colorScheme, setColorScheme] = useState('vibrant');
@@ -34,44 +35,34 @@ const Patterns = () => {
     }
 
     setIsGenerating(true);
+    setError(null);
     try {
-      // Patterns: Like Artbreeder - combine a pattern/texture with a description
-      // The pattern influences the visual style of the generated image
       const typeMap: Record<string, string> = {
-        'geometric': 'geometric shapes, mathematical precision, clean lines',
-        'organic': 'organic flowing forms, natural curves, biomorphic shapes',
-        'floral': 'botanical flowers and leaves, nature-inspired motifs',
-        'abstract': 'abstract expressionist forms, non-representational shapes',
-        'tribal': 'tribal and ethnic motifs, cultural patterns',
-        'art-deco': 'Art Deco style, 1920s geometric elegance, gold accents'
-      };
-      const colorMap: Record<string, string> = {
-        'vibrant': 'vibrant saturated colors, high contrast',
-        'pastel': 'soft pastel colors, gentle muted tones',
-        'monochrome': 'monochromatic palette, single color variations',
-        'earth': 'earthy natural colors, browns greens and terracotta',
-        'neon': 'neon bright colors, electric glowing hues',
-        'vintage': 'vintage muted colors, aged nostalgic palette'
+        'geometric': 'geometric shapes, clean lines',
+        'organic': 'organic flowing forms, natural curves',
+        'floral': 'botanical flowers and leaves',
+        'abstract': 'abstract expressionist forms',
+        'tribal': 'tribal and ethnic motifs',
+        'art-deco': 'Art Deco style, geometric elegance'
       };
 
-      const patternPrompt = `Create ${prompt} using a ${patternType} pattern style. ${typeMap[patternType] || ''}. Color scheme: ${colorMap[colorScheme] || colorScheme}. Detail complexity: ${complexity}% (${complexity < 30 ? 'minimal simple' : complexity < 70 ? 'moderate' : 'highly intricate detailed'}). ${seamless ? 'IMPORTANT: Make this a seamless tileable pattern that repeats perfectly on all edges.' : 'This is a standalone artwork, not necessarily tileable.'}`;
+      const fullPrompt = `Seamless tileable pattern of ${prompt}. Style: ${typeMap[patternType] || patternType}. Colors: ${colorScheme}. Complexity level: ${complexity}%. Must repeat perfectly.`;
 
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: {
-          prompt: patternPrompt,
-          type: 'pattern'
-        }
-      });
+      const result = await patternGenerate("", fullPrompt); // No pattern ref image for now, just text-to-pattern
 
-      if (error) throw error;
-
-      if (data?.imageUrl) {
-        setGeneratedImage(data.imageUrl);
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
         toast({ title: "Pattern généré !" });
+      } else {
+        const errorMsg = result.error || "Erreur lors de la génération";
+        setError(errorMsg);
+        toast({ title: errorMsg, variant: "destructive" });
       }
     } catch (error) {
       console.error('Pattern error:', error);
-      toast({ title: "Erreur lors de la génération", variant: "destructive" });
+      const errorMsg = error instanceof Error ? error.message : "Erreur lors de la génération";
+      setError(errorMsg);
+      toast({ title: errorMsg, variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
@@ -88,7 +79,7 @@ const Patterns = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -104,7 +95,7 @@ const Patterns = () => {
             {/* Left: Controls */}
             <div className="glass-panel p-6 space-y-6">
               <h2 className="text-lg font-semibold">Paramètres du pattern</h2>
-              
+
               <div>
                 <label className="text-sm text-muted-foreground mb-2 block">Description</label>
                 <Input
@@ -163,8 +154,8 @@ const Patterns = () => {
 
               <div className="flex items-center justify-between">
                 <label className="text-sm text-muted-foreground">Pattern sans couture (tileable)</label>
-                <Button 
-                  variant={seamless ? "default" : "outline"} 
+                <Button
+                  variant={seamless ? "default" : "outline"}
                   size="sm"
                   onClick={() => setSeamless(!seamless)}
                 >
@@ -172,7 +163,7 @@ const Patterns = () => {
                 </Button>
               </div>
 
-              <Button 
+              <Button
                 onClick={handleGenerate}
                 disabled={isGenerating || !prompt.trim()}
                 className="w-full gradient-primary"
@@ -202,7 +193,7 @@ const Patterns = () => {
                   </Button>
                 )}
               </div>
-              
+
               <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
                 {generatedImage ? (
                   <img src={generatedImage} alt="Generated pattern" className="w-full h-full object-contain" />
@@ -218,7 +209,7 @@ const Patterns = () => {
               {generatedImage && seamless && (
                 <div className="mt-4">
                   <label className="text-sm text-muted-foreground mb-2 block">Aperçu en mosaïque</label>
-                  <div 
+                  <div
                     className="h-32 rounded-lg"
                     style={{
                       backgroundImage: `url(${generatedImage})`,

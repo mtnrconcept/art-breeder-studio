@@ -4,8 +4,8 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Upload, Loader2, Download, Trash2, Shapes } from 'lucide-react';
+import { Upload, Loader2, Download, Trash2, Shapes, AlertCircle } from 'lucide-react';
+import { spliceImages } from '@/lib/gemini';
 
 const Splicer = () => {
   const { user } = useAuth();
@@ -13,6 +13,7 @@ const Splicer = () => {
   const [images, setImages] = useState<{ file: File; preview: string; weight: number }[]>([]);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -61,36 +62,27 @@ const Splicer = () => {
     }
 
     setIsGenerating(true);
+    setError(null);
     try {
-      const imageDataPromises = images.map(async (img) => ({
-        base64: await fileToBase64(img.file),
-        weight: img.weight
-      }));
-      const imageData = await Promise.all(imageDataPromises);
-
-      // Build weight description for genetic crossbreeding
-      const weightDescription = images.map((img, i) => 
-        `Parent ${i + 1} contributes ${img.weight}% of visual genes`
-      ).join('. ');
+      const imageDataPromises = images.map(async (img) => await fileToBase64(img.file));
+      const base64Images = await Promise.all(imageDataPromises);
 
       // Splicer: Crossbreed images like genetic mixing - blend their visual DNA
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: {
-          prompt: `Crossbreed these ${images.length} parent images. ${weightDescription}. Merge their visual genetics: blend colors, shapes, textures, and distinctive features from each parent proportionally to their weights. The offspring should inherit traits from all parents in a natural-looking hybrid.`,
-          baseImages: imageData.map(d => d.base64),
-          type: 'splice'
-        }
-      });
+      const result = await spliceImages(base64Images);
 
-      if (error) throw error;
-
-      if (data?.imageUrl) {
-        setGeneratedImage(data.imageUrl);
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
         toast({ title: "Images croisées génétiquement !" });
+      } else {
+        const errorMsg = result.error || 'Erreur lors du croisement';
+        setError(errorMsg);
+        toast({ title: errorMsg, variant: "destructive" });
       }
     } catch (error) {
       console.error('Splice error:', error);
-      toast({ title: "Erreur lors du croisement", variant: "destructive" });
+      const errorMsg = error instanceof Error ? error.message : "Erreur lors du croisement";
+      setError(errorMsg);
+      toast({ title: errorMsg, variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
@@ -107,7 +99,7 @@ const Splicer = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -124,12 +116,12 @@ const Splicer = () => {
             <div className="space-y-6">
               <div className="glass-panel p-6">
                 <h2 className="text-lg font-semibold mb-4">Images à fusionner (2-4)</h2>
-                
+
                 <div className="grid grid-cols-2 gap-4 mb-4">
                   {images.map((img, index) => (
                     <div key={index} className="relative group">
-                      <img 
-                        src={img.preview} 
+                      <img
+                        src={img.preview}
                         alt={`Image ${index + 1}`}
                         className="w-full aspect-square object-cover rounded-lg"
                       />
@@ -152,7 +144,7 @@ const Splicer = () => {
                       </div>
                     </div>
                   ))}
-                  
+
                   {images.length < 4 && (
                     <label className="aspect-square border-2 border-dashed border-border rounded-lg flex flex-col items-center justify-center cursor-pointer hover:border-primary transition-colors">
                       <Upload className="w-8 h-8 text-muted-foreground mb-2" />
@@ -168,7 +160,7 @@ const Splicer = () => {
                   )}
                 </div>
 
-                <Button 
+                <Button
                   onClick={handleSplice}
                   disabled={isGenerating || images.length < 2}
                   className="w-full gradient-primary"
@@ -199,7 +191,7 @@ const Splicer = () => {
                   </Button>
                 )}
               </div>
-              
+
               <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
                 {generatedImage ? (
                   <img src={generatedImage} alt="Spliced result" className="w-full h-full object-contain" />

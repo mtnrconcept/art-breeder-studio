@@ -5,8 +5,8 @@ import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Video, Wand2, RefreshCw, Download, Play, Pause, Settings2, AlertCircle } from 'lucide-react';
-import { textToVideo } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const videoModels = [
     { id: 'veo-3', label: 'Veo 3 Preview', description: 'Google AI' },
@@ -36,53 +36,19 @@ const TextToVideo = () => {
     const [model, setModel] = useState('veo-3');
     const [camera, setCamera] = useState('static');
     const [motionAmount, setMotionAmount] = useState([50]);
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
-    const [error, setError] = useState<string | null>(null);
-    const { toast } = useToast();
+    const { isGenerating, videoUrl: generatedVideo, error, createVideo, setVideoUrl: setGeneratedVideo } = useVideoGeneration();
 
     const handleGenerate = async () => {
         if (!prompt.trim()) return;
-        setIsGenerating(true);
-        setError(null);
-
-        try {
-            const result = await textToVideo(prompt, {
-                negativePrompt: negativePrompt || undefined,
-                duration: parseInt(duration),
-                aspectRatio,
-                cameraMotion: camera,
-                motionAmount: motionAmount[0],
-            });
-
-            if (result.success && result.videoUrl) {
-                setGeneratedVideo(result.videoUrl);
-                setIsPlaying(true);
-                toast({
-                    title: "Video Generated!",
-                    description: "Your video has been created successfully",
-                });
-            } else {
-                const errorMsg = result.error || 'Failed to generate video';
-                setError(errorMsg);
-                toast({
-                    title: "Generation Failed",
-                    description: errorMsg,
-                    variant: "destructive",
-                });
-            }
-        } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-            setError(errorMsg);
-            toast({
-                title: "Error",
-                description: errorMsg,
-                variant: "destructive",
-            });
-        } finally {
-            setIsGenerating(false);
-        }
+        const url = await createVideo(prompt, {
+            negativePrompt: negativePrompt || undefined,
+            duration: parseInt(duration),
+            aspectRatio,
+            cameraMotion: camera,
+            motionAmount: motionAmount[0],
+        });
+        if (url) setIsPlaying(true);
     };
 
     return (

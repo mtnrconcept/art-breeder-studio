@@ -34,29 +34,43 @@ async function callGeminiAPI(endpoint: string, body: object): Promise<Response> 
 
   const keys = [apiKey1, apiKey2].filter(Boolean) as string[];
 
+  const endpoints = [
+    endpoint,
+    endpoint.replace('aiplatform.googleapis.com/v1/publishers/google', 'generativelanguage.googleapis.com/v1beta')
+  ];
+
   for (let i = 0; i < keys.length; i++) {
-    try {
-      const response = await fetch(`${endpoint}?key=${keys[i]}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
+    const key = keys[i];
 
-      if (response.ok) {
-        return response;
+    for (const baseEndpoint of endpoints) {
+      const url = `${baseEndpoint}?key=${key}`;
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'x-goog-api-key': key
+      };
+
+      try {
+        console.log(`[callGeminiAPI] Attempt ${i + 1} on ${baseEndpoint.includes('aiplatform') ? 'Vertex' : 'AI Studio'}`);
+        const response = await fetch(url, {
+          method: 'POST',
+          headers,
+          body: JSON.stringify(body),
+        });
+
+        if (response.ok) {
+          return response;
+        }
+
+        const errorData = await response.text();
+        console.warn(`[callGeminiAPI] Failed (${response.status}) on ${baseEndpoint.split('/')[2]}:`, errorData);
+
+        if (response.status === 429) break; // Quota hit, try next key
+        if (response.status === 401 || response.status === 403 || response.status === 404) continue; // Try other endpoint
+
+        return new Response(errorData, { status: response.status });
+      } catch (error) {
+        console.error(`Network error on ${baseEndpoint}:`, error);
       }
-
-      // If rate limited or quota exceeded, try next key
-      if (response.status === 429 || response.status === 403) {
-        console.log(`API key ${i + 1} failed with status ${response.status}, trying fallback...`);
-        continue;
-      }
-
-      // For other errors, return the response
-      return response;
-    } catch (error) {
-      console.error(`API key ${i + 1} error:`, error);
-      if (i === keys.length - 1) throw error;
     }
   }
 
@@ -197,9 +211,9 @@ serve(async (req) => {
       requestBody.instances[0].mask = { bytesBase64Encoded: params.maskImageUrl.split(',')[1] || params.maskImageUrl };
     }
 
-    // Call Imagen 4 Ultra API
+    // Call Nano Banana Pro (Gemini 3 Image) API via AI Studio endpoint
     const response = await callGeminiAPI(
-      'https://generativelanguage.googleapis.com/v1beta/models/imagen-4-ultra-001:predict',
+      'https://generativelanguage.googleapis.com/v1beta/models/nano-banana-pro:predict',
       requestBody
     );
 

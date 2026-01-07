@@ -3,16 +3,17 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, FastForward, Wand2, RefreshCw, Download, Play, Pause, ArrowRight } from 'lucide-react';
+import { Upload, FastForward, Wand2, RefreshCw, Download, Play, Pause, ArrowRight, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const VideoExtension = () => {
     const [video, setVideo] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     const [direction, setDirection] = useState<'forward' | 'backward'>('forward');
     const [quality, setQuality] = useState('pro');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [extendedVideo, setExtendedVideo] = useState<string | null>(null);
     const [extensions, setExtensions] = useState<number>(0);
+    const { isGenerating: isProcessing, videoUrl: extendedVideo, error, createVideo, setVideoUrl: setExtendedVideo } = useVideoGeneration();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -24,15 +25,14 @@ const VideoExtension = () => {
         }
     };
 
-    const handleExtend = () => {
+    const handleExtend = async () => {
         if (!video) return;
-        setIsProcessing(true);
-
-        setTimeout(() => {
-            setExtendedVideo('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setExtensions(prev => prev + 1);
-            setIsProcessing(false);
-        }, 4000);
+        const extensionPrompt = prompt || `Extend this video ${direction} naturally while maintaining style and consistency.`;
+        const url = await createVideo(extensionPrompt, {
+            imageUrl: video,
+            duration: 5,
+        });
+        if (url) setExtensions(prev => prev + 1);
     };
 
     return (
@@ -93,8 +93,8 @@ const VideoExtension = () => {
                                     <button
                                         onClick={() => setDirection('forward')}
                                         className={`p-3 rounded-lg border flex items-center justify-center gap-2 transition-all ${direction === 'forward'
-                                                ? 'border-primary bg-primary/10 text-primary'
-                                                : 'border-border hover:border-primary/50'
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-border hover:border-primary/50'
                                             }`}
                                     >
                                         <ArrowRight className="w-4 h-4" />
@@ -103,8 +103,8 @@ const VideoExtension = () => {
                                     <button
                                         onClick={() => setDirection('backward')}
                                         className={`p-3 rounded-lg border flex items-center justify-center gap-2 transition-all ${direction === 'backward'
-                                                ? 'border-primary bg-primary/10 text-primary'
-                                                : 'border-border hover:border-primary/50'
+                                            ? 'border-primary bg-primary/10 text-primary'
+                                            : 'border-border hover:border-primary/50'
                                             }`}
                                     >
                                         <ArrowRight className="w-4 h-4 rotate-180" />

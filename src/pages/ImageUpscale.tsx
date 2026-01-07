@@ -4,20 +4,22 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Upload, ZoomIn, RefreshCw, Download, ArrowLeftRight, Sparkles, Image } from 'lucide-react';
+import { Upload, ZoomIn, RefreshCw, Download, ArrowLeftRight, Sparkles, Image, AlertCircle } from 'lucide-react';
+import { generateImage } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const upscaleModels = [
+    { id: 'imagen-4-ultra', label: 'Imagen 4 Ultra', description: 'Google\'s best model' },
     { id: 'real-esrgan', label: 'Real-ESRGAN', description: 'Best for photos' },
     { id: 'topaz-photo', label: 'Topaz Photo AI', description: 'Detail enhancement' },
-    { id: 'gigapixel', label: 'Gigapixel AI', description: 'Maximum resolution' },
-    { id: 'anime', label: 'Anime Upscaler', description: 'For illustrations' },
+    { id: ' gigapixel', label: 'Gigapixel AI', description: 'Maximum resolution' },
 ];
 
 const ImageUpscale = () => {
     const [image, setImage] = useState<string | null>(null);
     const [result, setResult] = useState<string | null>(null);
     const [scaleFactor, setScaleFactor] = useState('2');
-    const [model, setModel] = useState('real-esrgan');
+    const [model, setModel] = useState('imagen-4-ultra');
     const [denoise, setDenoise] = useState([20]);
     const [sharpness, setSharpness] = useState([50]);
     const [enhanceDetails, setEnhanceDetails] = useState(true);
@@ -25,6 +27,8 @@ const ImageUpscale = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [compareMode, setCompareMode] = useState(false);
     const [comparePosition, setComparePosition] = useState(50);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -38,14 +42,45 @@ const ImageUpscale = () => {
         }
     };
 
-    const handleUpscale = () => {
+    const handleUpscale = async () => {
         if (!image) return;
         setIsProcessing(true);
+        setError(null);
 
-        setTimeout(() => {
-            setResult('https://images.unsplash.com/photo-1682687220742-aba13b6e50ba?w=2000&h=2000&fit=crop');
+        try {
+            const prompt = `Upscale this image to ${scaleFactor}x resolution. Enhance details, remove noise, and improve sharpness while maintaining the original content and style accurately.`;
+            const res = await generateImage({
+                prompt,
+                baseImageUrl: image,
+                type: 'tune', // Using tune for image-to-image enhancement
+            });
+
+            if (res.success && res.imageUrl) {
+                setResult(res.imageUrl);
+                toast({
+                    title: "Upscale Complete!",
+                    description: `Image successfully enhanced by ${scaleFactor}x`,
+                });
+            } else {
+                const errorMsg = res.error || 'Failed to upscale image';
+                setError(errorMsg);
+                toast({
+                    title: "Upscale Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 4000);
+        }
     };
 
     return (
@@ -96,8 +131,8 @@ const ImageUpscale = () => {
                                             key={factor}
                                             onClick={() => setScaleFactor(factor)}
                                             className={`p-3 rounded-lg border text-center font-semibold transition-all ${scaleFactor === factor
-                                                    ? 'border-primary bg-primary/10 text-primary'
-                                                    : 'border-border hover:border-primary/50'
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-border hover:border-primary/50'
                                                 }`}
                                         >
                                             {factor}x

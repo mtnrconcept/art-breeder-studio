@@ -2,7 +2,9 @@ import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Sun, Wand2, RefreshCw, Download } from 'lucide-react';
+import { Upload, Sun, Wand2, RefreshCw, Download, AlertCircle } from 'lucide-react';
+import { generateVideo } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const timePresets = [
     { id: 'sunrise', label: 'Sunrise', emoji: '🌅', color: 'from-orange-400 to-pink-500' },
@@ -22,19 +24,53 @@ const ChangeTimeOfDay = () => {
     const [atmosphereHaze, setAtmosphereHaze] = useState([30]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) { setVideo(URL.createObjectURL(file)); setResult(null); }
     };
 
-    const handleProcess = () => {
+    const handleProcess = async () => {
         if (!video) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
+        setError(null);
+
+        try {
+            const timeDesc = timePresets.find(p => p.id === selectedTime)?.label || selectedTime;
+            const fullPrompt = `Change the time of day in this video to ${timeDesc}. Adjust lighting, shadows, and atmosphere color accordingly. Intensity: ${intensity[0]}%. Haze: ${atmosphereHaze[0]}%.`;
+
+            const res = await generateVideo(fullPrompt, {
+                imageUrl: video,
+            });
+
+            if (res.success && res.videoUrl) {
+                setResult(res.videoUrl);
+                toast({
+                    title: "Time Changed!",
+                    description: `Lighting shifted to ${timeDesc}`,
+                });
+            } else {
+                const errorMsg = res.error || 'Failed to change time of day';
+                setError(errorMsg);
+                toast({
+                    title: "Process Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 4000);
+        }
     };
 
     return (

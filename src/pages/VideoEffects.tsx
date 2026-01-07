@@ -3,6 +3,8 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Upload, Heart, Wand2, RefreshCw, Download, Plus, X } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const effectTemplates = [
     { id: 'hug', label: 'Hug', emoji: '🤗', single: false },
@@ -19,8 +21,7 @@ const VideoEffects = () => {
     const [images, setImages] = useState<string[]>([]);
     const [selectedEffect, setSelectedEffect] = useState('hug');
     const [duration, setDuration] = useState('5');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [result, setResult] = useState<string | null>(null);
+    const { isGenerating: isProcessing, videoUrl: result, error, createVideo, setVideoUrl: setResult } = useVideoGeneration();
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const files = e.target.files;
@@ -38,13 +39,13 @@ const VideoEffects = () => {
     const currentEffect = effectTemplates.find(e => e.id === selectedEffect);
     const minImages = currentEffect?.single ? 1 : 2;
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (images.length < minImages) return;
-        setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setIsProcessing(false);
-        }, 5000);
+        const effectDesc = currentEffect?.label || selectedEffect;
+        await createVideo(`Create a video of these characters doing a ${effectDesc} interaction. Ensure character consistency and natural motion.`, {
+            imageUrl: images[0],
+            duration: parseInt(duration),
+        });
     };
 
     return (

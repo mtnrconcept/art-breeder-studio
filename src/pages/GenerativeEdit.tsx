@@ -3,10 +3,12 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Upload, Edit3, Wand2, RefreshCw, Download, Plus, Minus, Sun, Moon, Smile, Frown } from 'lucide-react';
+import { Upload, Edit3, Wand2, RefreshCw, Download, Plus, Minus, Sun, Moon, Smile, Frown, AlertCircle } from 'lucide-react';
+import { generativeEdit } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const editModels = [
-    { id: 'nano-banana', label: 'Nano Banana', description: 'Fast & precise' },
+    { id: 'imagen-4-ultra', label: 'Imagen 4 Ultra', description: 'Google\'s best model' },
     { id: 'flux-kontext', label: 'Flux Kontext', description: 'High quality' },
     { id: 'qwen', label: 'Qwen Edit', description: 'Best understanding' },
     { id: 'sdxl-inpaint', label: 'SDXL Inpaint', description: 'Creative' },
@@ -24,10 +26,12 @@ const quickActions = [
 const GenerativeEdit = () => {
     const [image, setImage] = useState<string | null>(null);
     const [editPrompt, setEditPrompt] = useState('');
-    const [selectedModel, setSelectedModel] = useState('nano-banana');
+    const [selectedModel, setSelectedModel] = useState('imagen-4-ultra');
     const [result, setResult] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [history, setHistory] = useState<string[]>([]);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -53,16 +57,41 @@ const GenerativeEdit = () => {
         }
     };
 
-    const handleEdit = () => {
+    const handleEdit = async () => {
         if (!image || !editPrompt.trim()) return;
         setIsProcessing(true);
+        setError(null);
 
-        setTimeout(() => {
-            const newResult = 'https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=800&h=800&fit=crop';
-            setResult(newResult);
-            setHistory(prev => [...prev, image!]);
+        try {
+            const res = await generativeEdit(image, editPrompt);
+
+            if (res.success && res.imageUrl) {
+                setResult(res.imageUrl);
+                setHistory(prev => [...prev, image!]);
+                toast({
+                    title: "Edit Applied!",
+                    description: "Your transformation is complete",
+                });
+            } else {
+                const errorMsg = res.error || 'Failed to edit image';
+                setError(errorMsg);
+                toast({
+                    title: "Edit Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 2500);
+        }
     };
 
     const handleUndo = () => {

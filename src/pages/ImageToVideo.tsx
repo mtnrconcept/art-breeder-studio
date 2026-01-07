@@ -6,8 +6,8 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Upload, Video, Wand2, RefreshCw, Download, Play, Pause, Move, AlertCircle } from 'lucide-react';
-import { imageToVideo } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const ImageToVideo = () => {
     const [image, setImage] = useState<string | null>(null);
@@ -17,13 +17,10 @@ const ImageToVideo = () => {
     const [duration, setDuration] = useState('5');
     const [quality, setQuality] = useState('pro');
     const [motionAmount, setMotionAmount] = useState([50]);
-    const [isGenerating, setIsGenerating] = useState(false);
-    const [generatedVideo, setGeneratedVideo] = useState<string | null>(null);
     const [isPlaying, setIsPlaying] = useState(false);
     const [motionBrushMode, setMotionBrushMode] = useState(false);
-    const [error, setError] = useState<string | null>(null);
     const canvasRef = useRef<HTMLCanvasElement>(null);
-    const { toast } = useToast();
+    const { isGenerating, videoUrl: generatedVideo, error, createVideo, setVideoUrl: setGeneratedVideo } = useVideoGeneration();
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isEnd: boolean = false) => {
         const file = e.target.files?.[0];
@@ -42,42 +39,12 @@ const ImageToVideo = () => {
 
     const handleGenerate = async () => {
         if (!image || !prompt.trim()) return;
-        setIsGenerating(true);
-        setError(null);
-
-        try {
-            const result = await imageToVideo(image, prompt, {
-                duration: parseInt(duration),
-                motionAmount: motionAmount[0],
-            });
-
-            if (result.success && result.videoUrl) {
-                setGeneratedVideo(result.videoUrl);
-                setIsPlaying(true);
-                toast({
-                    title: "Video Created!",
-                    description: "Your image has been animated successfully",
-                });
-            } else {
-                const errorMsg = result.error || 'Failed to animate image';
-                setError(errorMsg);
-                toast({
-                    title: "Animation Failed",
-                    description: errorMsg,
-                    variant: "destructive",
-                });
-            }
-        } catch (err) {
-            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-            setError(errorMsg);
-            toast({
-                title: "Error",
-                description: errorMsg,
-                variant: "destructive",
-            });
-        } finally {
-            setIsGenerating(false);
-        }
+        const url = await createVideo(prompt, {
+            imageUrl: image,
+            duration: parseInt(duration),
+            motionAmount: motionAmount[0],
+        });
+        if (url) setIsPlaying(true);
     };
 
     return (

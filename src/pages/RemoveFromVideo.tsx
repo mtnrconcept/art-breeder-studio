@@ -3,14 +3,14 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Eraser, Wand2, RefreshCw, Download, Play, Pause } from 'lucide-react';
+import { Upload, Eraser, Wand2, RefreshCw, Download, Play, Pause, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const RemoveFromVideo = () => {
     const [video, setVideo] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [result, setResult] = useState<string | null>(null);
-    const [brushSize, setBrushSize] = useState([30]);
+    const { isGenerating: isProcessing, videoUrl: result, error, createVideo, setVideoUrl: setResult } = useVideoGeneration();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -21,13 +21,13 @@ const RemoveFromVideo = () => {
         }
     };
 
-    const handleRemove = () => {
+    const [brushSize, setBrushSize] = useState([30]);
+
+    const handleRemove = async () => {
         if (!video || !prompt.trim()) return;
-        setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setIsProcessing(false);
-        }, 4000);
+        await createVideo(`Remove ${prompt} from this video. Fill the removed area seamlessly with the background.`, {
+            imageUrl: video,
+        });
     };
 
     return (

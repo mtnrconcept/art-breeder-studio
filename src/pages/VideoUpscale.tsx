@@ -4,17 +4,18 @@ import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { Upload, Film, Sparkles, RefreshCw, Download, Gauge } from 'lucide-react';
+import { Upload, Film, Sparkles, RefreshCw, Download, Gauge, AlertCircle } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const VideoUpscale = () => {
     const [video, setVideo] = useState<string | null>(null);
-    const [result, setResult] = useState<string | null>(null);
     const [resolution, setResolution] = useState('4k');
     const [frameRate, setFrameRate] = useState('60');
     const [slowMotion, setSlowMotion] = useState(false);
     const [slowMotionFactor, setSlowMotionFactor] = useState([2]);
     const [denoise, setDenoise] = useState([30]);
-    const [isProcessing, setIsProcessing] = useState(false);
+    const { isGenerating: isProcessing, videoUrl: result, error, createVideo, setVideoUrl: setResult } = useVideoGeneration();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -25,14 +26,13 @@ const VideoUpscale = () => {
         }
     };
 
-    const handleUpscale = () => {
+    const handleUpscale = async () => {
         if (!video) return;
-        setIsProcessing(true);
+        const upscalePrompt = `Upscale this video to ${resolution.toUpperCase()} resolution. Enhance details, remove noise (${denoise[0]}%), and interpolate to ${frameRate}fps. ${slowMotion ? `Apply ${slowMotionFactor[0]}x slow motion.` : ''}`;
 
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setIsProcessing(false);
-        }, 5000);
+        await createVideo(upscalePrompt, {
+            imageUrl: video,
+        });
     };
 
     return (
@@ -99,8 +99,8 @@ const VideoUpscale = () => {
                                             key={res.id}
                                             onClick={() => setResolution(res.id)}
                                             className={`p-3 rounded-lg border text-center transition-all ${resolution === res.id
-                                                    ? 'border-primary bg-primary/10 text-primary'
-                                                    : 'border-border hover:border-primary/50'
+                                                ? 'border-primary bg-primary/10 text-primary'
+                                                : 'border-border hover:border-primary/50'
                                                 }`}
                                         >
                                             <span className="font-bold block">{res.label}</span>

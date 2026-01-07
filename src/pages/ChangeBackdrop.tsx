@@ -3,7 +3,9 @@ import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Slider } from '@/components/ui/slider';
-import { Upload, ImageIcon, Wand2, RefreshCw, Download } from 'lucide-react';
+import { Upload, ImageIcon, Wand2, RefreshCw, Download, AlertCircle } from 'lucide-react';
+import { generateVideo } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const backdropPresets = [
     { id: 'beach', label: 'Beach', emoji: '🏖️' },
@@ -24,6 +26,8 @@ const ChangeBackdrop = () => {
     const [edgeBlur, setEdgeBlur] = useState([20]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -39,13 +43,47 @@ const ChangeBackdrop = () => {
         }
     };
 
-    const handleProcess = () => {
+    const handleProcess = async () => {
         if (!video) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
+        setError(null);
+
+        try {
+            const backdropDesc = selectedPreset ? backdropPresets.find(p => p.id === selectedPreset)?.label : "";
+            const fullPrompt = `Change the background of this video to ${backdropDesc || prompt || 'a new scene'}. Ensure seamless person/subject isolation and natural lighting matching.`;
+
+            // Note: Veo 3 Video-to-Video isn't explicitly in the current SDK but we'll use generateVideo 
+            // with the source video as 'imageUrl' which the backend can handle as a reference media.
+            const res = await generateVideo(fullPrompt, {
+                imageUrl: video, // Using source video as reference
+            });
+
+            if (res.success && res.videoUrl) {
+                setResult(res.videoUrl);
+                toast({
+                    title: "Backdrop Changed!",
+                    description: "Your video has been transformed.",
+                });
+            } else {
+                const errorMsg = res.error || 'Failed to change backdrop';
+                setError(errorMsg);
+                toast({
+                    title: "Process Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 4000);
+        }
     };
 
     return (

@@ -2,21 +2,23 @@ import { useState } from 'react';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
-import { Upload, Palette, Wand2, RefreshCw, Download, ArrowRight, Sparkles } from 'lucide-react';
+import { Upload, Palette, Wand2, RefreshCw, Download, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
+import { styleTransfer } from '@/lib/gemini';
+import { useToast } from '@/hooks/use-toast';
 
 const stylePresets = [
-    { id: 'van-gogh', label: 'Van Gogh', image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=200&h=200&fit=crop' },
-    { id: 'monet', label: 'Monet', image: 'https://images.unsplash.com/photo-1578321272176-b7bbc0679853?w=200&h=200&fit=crop' },
-    { id: 'picasso', label: 'Picasso', image: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=200&h=200&fit=crop' },
-    { id: 'anime', label: 'Anime', image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=200&h=200&fit=crop' },
-    { id: 'sketch', label: 'Pencil Sketch', image: 'https://images.unsplash.com/photo-1502355984-b735cb2550ce?w=200&h=200&fit=crop' },
-    { id: 'watercolor', label: 'Watercolor', image: 'https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?w=200&h=200&fit=crop' },
-    { id: 'pop-art', label: 'Pop Art', image: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=200&h=200&fit=crop' },
-    { id: 'cyberpunk', label: 'Cyberpunk', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=200&h=200&fit=crop' },
-    { id: 'oil-painting', label: 'Oil Painting', image: 'https://images.unsplash.com/photo-1579762715118-a6f1d4b934f1?w=200&h=200&fit=crop' },
-    { id: 'digital-art', label: 'Digital Art', image: 'https://images.unsplash.com/photo-1634017839464-5c339bbe3c35?w=200&h=200&fit=crop' },
-    { id: 'vintage', label: 'Vintage Film', image: 'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=200&h=200&fit=crop' },
-    { id: 'neon', label: 'Neon Glow', image: 'https://images.unsplash.com/photo-1550684376-efcbd6e3f031?w=200&h=200&fit=crop' },
+    { id: 'van-gogh', label: 'Van Gogh', image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=512&h=512&fit=crop' },
+    { id: 'monet', label: 'Monet', image: 'https://images.unsplash.com/photo-1578321272176-b7bbc0679853?w=512&h=512&fit=crop' },
+    { id: 'picasso', label: 'Picasso', image: 'https://images.unsplash.com/photo-1541961017774-22349e4a1262?w=512&h=512&fit=crop' },
+    { id: 'anime', label: 'Anime', image: 'https://images.unsplash.com/photo-1578632767115-351597cf2477?w=512&h=512&fit=crop' },
+    { id: 'sketch', label: 'Pencil Sketch', image: 'https://images.unsplash.com/photo-1502355984-b735cb2550ce?w=512&h=512&fit=crop' },
+    { id: 'watercolor', label: 'Watercolor', image: 'https://images.unsplash.com/photo-1579783928621-7a13d66a62d1?w=512&h=512&fit=crop' },
+    { id: 'pop-art', label: 'Pop Art', image: 'https://images.unsplash.com/photo-1561214115-f2f134cc4912?w=512&h=512&fit=crop' },
+    { id: 'cyberpunk', label: 'Cyberpunk', image: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=512&h=512&fit=crop' },
+    { id: 'oil-painting', label: 'Oil Painting', image: 'https://images.unsplash.com/photo-1579762715118-a6f1d4b934f1?w=512&h=512&fit=crop' },
+    { id: 'digital-art', label: 'Digital Art', image: 'https://images.unsplash.com/photo-1634017839464-5c339bbe3c35?w=512&h=512&fit=crop' },
+    { id: 'vintage', label: 'Vintage Film', image: 'https://images.unsplash.com/photo-1518998053901-5348d3961a04?w=512&h=512&fit=crop' },
+    { id: 'neon', label: 'Neon Glow', image: 'https://images.unsplash.com/photo-1550684376-efcbd6e3f031?w=512&h=512&fit=crop' },
 ];
 
 const StyleTransfer = () => {
@@ -28,6 +30,8 @@ const StyleTransfer = () => {
     const [result, setResult] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [activeTab, setActiveTab] = useState<'presets' | 'custom'>('presets');
+    const [error, setError] = useState<string | null>(null);
+    const { toast } = useToast();
 
     const handleContentUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -62,14 +66,46 @@ const StyleTransfer = () => {
         }
     };
 
-    const handleTransfer = () => {
+    const handleTransfer = async () => {
         if (!contentImage || (!styleImage && !selectedPreset)) return;
         setIsProcessing(true);
+        setError(null);
 
-        setTimeout(() => {
-            setResult('https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=800&h=800&fit=crop');
+        try {
+            const targetStyle = styleImage || (selectedPreset ? stylePresets.find(p => p.id === selectedPreset)?.image : null);
+            if (!targetStyle) throw new Error("No style selected");
+
+            const presetName = selectedPreset ? stylePresets.find(p => p.id === selectedPreset)?.label : "this artistic reference";
+            const prompt = `Stylize the image using the artistic style of ${presetName}, preserving the content and structure.`;
+
+            const res = await styleTransfer(contentImage, targetStyle, prompt, styleStrength[0]);
+
+            if (res.success && res.imageUrl) {
+                setResult(res.imageUrl);
+                toast({
+                    title: "Style Applied!",
+                    description: "Your artistic transformation is complete",
+                });
+            } else {
+                const errorMsg = res.error || 'Failed to apply style';
+                setError(errorMsg);
+                toast({
+                    title: "Processing Failed",
+                    description: errorMsg,
+                    variant: "destructive",
+                });
+            }
+        } catch (err) {
+            const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
+            setError(errorMsg);
+            toast({
+                title: "Error",
+                description: errorMsg,
+                variant: "destructive",
+            });
+        } finally {
             setIsProcessing(false);
-        }, 3000);
+        }
     };
 
     return (
@@ -158,8 +194,8 @@ const StyleTransfer = () => {
                                                 key={preset.id}
                                                 onClick={() => handlePresetSelect(preset.id)}
                                                 className={`relative aspect-square rounded-lg overflow-hidden border-2 transition-all ${selectedPreset === preset.id
-                                                        ? 'border-primary ring-2 ring-primary/50'
-                                                        : 'border-transparent hover:border-primary/50'
+                                                    ? 'border-primary ring-2 ring-primary/50'
+                                                    : 'border-transparent hover:border-primary/50'
                                                     }`}
                                             >
                                                 <img src={preset.image} alt={preset.label} className="w-full h-full object-cover" />

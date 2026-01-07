@@ -6,8 +6,8 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
-import { supabase } from '@/integrations/supabase/client';
-import { Upload, Loader2, Download, User, Sparkles } from 'lucide-react';
+import { Upload, Loader2, Download, User, Sparkles, AlertCircle } from 'lucide-react';
+import { generatePortrait } from '@/lib/gemini';
 
 const Portraits = () => {
   const { user } = useAuth();
@@ -16,7 +16,8 @@ const Portraits = () => {
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  
+  const [error, setError] = useState<string | null>(null);
+
   // Portrait parameters
   const [age, setAge] = useState(30);
   const [gender, setGender] = useState('any');
@@ -39,42 +40,35 @@ const Portraits = () => {
     }
 
     setIsGenerating(true);
+    setError(null);
     try {
-      // Portraits: Generate faces with adjustable "genes" like Artbreeder's splicer for faces
       const genderText = gender === 'any' ? 'person' : gender === 'male' ? 'man' : 'woman';
       const styleMap: Record<string, string> = {
         'realistic': 'photorealistic, studio photography quality',
         'artistic': 'artistic painting style, painterly brushstrokes',
-        'anime': 'anime/manga art style with large expressive eyes',
-        'oil-painting': 'classical oil painting style, Renaissance masters technique'
-      };
-      const expressionMap: Record<string, string> = {
-        'neutral': 'calm neutral expression, relaxed face',
-        'happy': 'genuine warm smile, happy sparkling eyes',
-        'serious': 'serious contemplative expression, focused gaze',
-        'mysterious': 'enigmatic mysterious expression, slight Mona Lisa smile',
-        'surprised': 'surprised expression with raised eyebrows'
+        'anime': 'anime/manga art style',
+        'oil-painting': 'classical oil painting style'
       };
 
-      const portraitPrompt = `Portrait of a ${genderText}, apparent age ${age} years old. ${styleMap[style] || style}. ${expressionMap[expression] || expression}. ${prompt ? `Additional details: ${prompt}.` : ''} High-resolution face with natural skin texture, realistic eye reflections, well-defined facial features, flattering studio lighting.`;
+      const fullPrompt = `Portrait of a ${genderText}, age ${age}. ${styleMap[style] || style}. ${expression} expression. ${prompt}`;
 
-      const { data, error } = await supabase.functions.invoke('generate-image', {
-        body: {
-          prompt: portraitPrompt,
-          baseImageUrl: referenceImage,
-          type: 'portrait'
-        }
+      const result = await generatePortrait(fullPrompt, {
+        style: style === 'realistic' ? 'photorealistic' : style,
       });
 
-      if (error) throw error;
-
-      if (data?.imageUrl) {
-        setGeneratedImage(data.imageUrl);
+      if (result.success && result.imageUrl) {
+        setGeneratedImage(result.imageUrl);
         toast({ title: "Portrait généré !" });
+      } else {
+        const errorMsg = result.error || "Erreur lors de la génération";
+        setError(errorMsg);
+        toast({ title: errorMsg, variant: "destructive" });
       }
     } catch (error) {
       console.error('Portrait error:', error);
-      toast({ title: "Erreur lors de la génération", variant: "destructive" });
+      const errorMsg = error instanceof Error ? error.message : "Erreur lors de la génération";
+      setError(errorMsg);
+      toast({ title: errorMsg, variant: "destructive" });
     } finally {
       setIsGenerating(false);
     }
@@ -91,7 +85,7 @@ const Portraits = () => {
   return (
     <div className="min-h-screen bg-background">
       <Header />
-      
+
       <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
         <div className="max-w-6xl mx-auto">
           {/* Header */}
@@ -112,9 +106,9 @@ const Portraits = () => {
                 {referenceImage ? (
                   <div className="relative">
                     <img src={referenceImage} alt="Reference" className="w-full rounded-lg" />
-                    <Button 
-                      variant="destructive" 
-                      size="sm" 
+                    <Button
+                      variant="destructive"
+                      size="sm"
                       className="absolute top-2 right-2"
                       onClick={() => setReferenceImage(null)}
                     >
@@ -138,7 +132,7 @@ const Portraits = () => {
               {/* Portrait Parameters */}
               <div className="glass-panel p-6 space-y-6">
                 <h2 className="text-lg font-semibold">Paramètres du portrait</h2>
-                
+
                 <div>
                   <label className="text-sm text-muted-foreground mb-2 block">Description</label>
                   <Input
@@ -206,7 +200,7 @@ const Portraits = () => {
                   </Select>
                 </div>
 
-                <Button 
+                <Button
                   onClick={handleGenerate}
                   disabled={isGenerating}
                   className="w-full gradient-primary"
@@ -237,7 +231,7 @@ const Portraits = () => {
                   </Button>
                 )}
               </div>
-              
+
               <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
                 {generatedImage ? (
                   <img src={generatedImage} alt="Generated portrait" className="w-full h-full object-contain" />
