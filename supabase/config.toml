@@ -1,1 +1,31 @@
 project_id = "jbnpknyyoeqherizhonj"
+
+[functions.generate-image]
+verify_jwt = false
+
+[functions.generate-video]
+verify_jwt = false
+
+[functions.lip-sync]
+verify_jwt = false
+
+[functions.remove-background]
+verify_jwt = false
+
+[functions.upscale-image]
+verify_jwt = false
+
+[functions.inpaint]
+verify_jwt = false
+
+[functions.virtual-tryon]
+verify_jwt = false
+
+[functions.extend-video]
+verify_jwt = false
+
+[functions.sound-generator]
+verify_jwt = false
+
+[functions.video-effects]
+verify_jwt = false

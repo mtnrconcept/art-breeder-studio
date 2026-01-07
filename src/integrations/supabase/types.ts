@@ -103,6 +103,51 @@ export type Database = {
         }
         Relationships: []
       }
+      video_creations: {
+        Row: {
+          created_at: string
+          duration_seconds: number | null
+          id: string
+          is_public: boolean | null
+          prompt: string | null
+          settings: Json | null
+          thumbnail_url: string | null
+          title: string | null
+          tool_type: string
+          updated_at: string
+          user_id: string
+          video_url: string
+        }
+        Insert: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          is_public?: boolean | null
+          prompt?: string | null
+          settings?: Json | null
+          thumbnail_url?: string | null
+          title?: string | null
+          tool_type: string
+          updated_at?: string
+          user_id: string
+          video_url: string
+        }
+        Update: {
+          created_at?: string
+          duration_seconds?: number | null
+          id?: string
+          is_public?: boolean | null
+          prompt?: string | null
+          settings?: Json | null
+          thumbnail_url?: string | null
+          title?: string | null
+          tool_type?: string
+          updated_at?: string
+          user_id?: string
+          video_url?: string
+        }
+        Relationships: []
+      }
     }
     Views: {
       [_ in never]: never
