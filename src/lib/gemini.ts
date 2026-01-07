@@ -14,6 +14,9 @@ export interface ImageGenerationRequest {
     baseImageUrl?: string;
     baseImages?: string[];
     maskImageUrl?: string;
+    styleImages?: string[];
+    characterImages?: string[];
+    objectImages?: string[];
     type?: 'text2img' | 'compose' | 'splice' | 'portrait' | 'pattern' | 'outpaint' | 'tune' | 'inpaint' | 'style-transfer' | 'backdrop' | 'relight';
     styleStrength?: number;
     contentStrength?: number;
@@ -247,12 +250,18 @@ export async function generatePortrait(
 export async function composeImages(
     images: string[],
     prompt: string,
-    options?: { styleStrength?: number; contentStrength?: number }
+    options?: {
+        styleStrength?: number;
+        contentStrength?: number;
+        styleImages?: string[];
+        characterImages?: string[];
+        objectImages?: string[];
+    }
 ): Promise<GenerationResult> {
     return generateImage({
         prompt,
         type: 'compose',
-        baseImages: images,
+        baseImages: images, // Use this for "Base Image"
         ...options,
     });
 }
