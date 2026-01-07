@@ -1,12 +1,9 @@
 import { useState, useCallback } from 'react';
-import { Header } from '@/components/layout/Header';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
+import { VideoToolLayout } from '@/components/tools/VideoToolLayout';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Label } from '@/components/ui/label';
-import { Progress } from '@/components/ui/progress';
 import { toast } from '@/hooks/use-toast';
-import { Loader2, Download, Plus, Upload, X } from 'lucide-react';
+import { Plus } from 'lucide-react';
 import { supabase } from '@/integrations/supabase/client';
 
 const VideoExtend = () => {
@@ -16,18 +13,7 @@ const VideoExtend = () => {
   const [isProcessing, setIsProcessing] = useState(false);
   const [progress, setProgress] = useState(0);
   const [resultVideo, setResultVideo] = useState<string | null>(null);
-
-  const handleVideoUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = (e) => {
-        setVideoUrl(e.target?.result as string);
-        setResultVideo(null);
-      };
-      reader.readAsDataURL(file);
-    }
-  }, []);
+  const [history, setHistory] = useState<string[]>([]);
 
   const extendVideo = async () => {
     if (!videoUrl || !prompt.trim()) {
@@ -51,6 +37,7 @@ const VideoExtend = () => {
       if (data.error) throw new Error(data.error);
 
       setResultVideo(data.videoUrl);
+      setHistory(prev => [data.videoUrl, ...prev].slice(0, 8));
       setProgress(100);
       toast({ title: 'Vidéo étendue !', description: 'La continuation est prête.' });
     } catch (error: any) {
@@ -62,121 +49,44 @@ const VideoExtend = () => {
     }
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-4xl mx-auto">
-          <div className="text-center mb-12">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-teal-500 to-emerald-500 flex items-center justify-center mx-auto mb-6">
-              <Plus className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-4xl font-bold mb-4">
-              <span className="gradient-text">Video Extend</span>
-            </h1>
-            <p className="text-muted-foreground text-lg">
-              Prolongez vos vidéos avec l'IA en décrivant ce qui doit se passer ensuite.
-            </p>
-          </div>
-
-          <div className="glass-card p-8 space-y-6">
-            <div>
-              <Label>Vidéo source</Label>
-              {videoUrl ? (
-                <div className="relative mt-2">
-                  <video src={videoUrl} controls className="w-full max-h-64 rounded-xl" />
-                  <Button
-                    variant="destructive"
-                    size="icon"
-                    className="absolute top-2 right-2"
-                    onClick={() => { setVideoUrl(null); setResultVideo(null); }}
-                  >
-                    <X className="w-4 h-4" />
-                  </Button>
-                </div>
-              ) : (
-                <label className="mt-2 flex flex-col items-center justify-center w-full h-48 border-2 border-dashed border-muted-foreground/25 rounded-xl cursor-pointer hover:border-primary/50 transition-colors">
-                  <Upload className="w-8 h-8 text-muted-foreground mb-2" />
-                  <span className="text-sm text-muted-foreground">Cliquez pour télécharger</span>
-                  <input type="file" accept="video/*" onChange={handleVideoUpload} className="hidden" />
-                </label>
-              )}
-            </div>
-
-            <div>
-              <Label htmlFor="prompt">Que doit-il se passer ensuite ?</Label>
-              <Textarea
-                id="prompt"
-                placeholder="Ex: Le personnage se retourne et commence à courir vers la caméra..."
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                className="mt-2 min-h-24"
-              />
-            </div>
-
-            <div>
-              <Label>Durée de l'extension</Label>
-              <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v) as 5 | 10)}>
-                <SelectTrigger className="mt-2">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="5">5 secondes</SelectItem>
-                  <SelectItem value="10">10 secondes</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {isProcessing && (
-              <div className="space-y-2">
-                <div className="flex justify-between text-sm">
-                  <span>Extension en cours...</span>
-                  <span>{progress}%</span>
-                </div>
-                <Progress value={progress} />
-                <p className="text-xs text-muted-foreground text-center">
-                  L'extension peut prendre 3-8 minutes
-                </p>
-              </div>
-            )}
-
-            <Button
-              onClick={extendVideo}
-              disabled={isProcessing || !videoUrl || !prompt.trim()}
-              className="w-full"
-              size="lg"
-            >
-              {isProcessing ? (
-                <>
-                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                  Extension...
-                </>
-              ) : (
-                <>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Prolonger la vidéo
-                </>
-              )}
-            </Button>
-
-            {resultVideo && (
-              <div className="mt-8 space-y-4">
-                <Label>Vidéo étendue</Label>
-                <div className="rounded-xl overflow-hidden bg-black/50">
-                  <video src={resultVideo} controls autoPlay loop className="w-full" />
-                </div>
-                <Button asChild variant="outline" className="w-full">
-                  <a href={resultVideo} download target="_blank" rel="noopener noreferrer">
-                    <Download className="w-4 h-4 mr-2" />
-                    Télécharger
-                  </a>
-                </Button>
-              </div>
-            )}
-          </div>
-        </div>
-      </main>
+  const controlsPanel = (
+    <div>
+      <Label className="text-xs text-muted-foreground">Durée de l'extension</Label>
+      <Select value={String(duration)} onValueChange={(v) => setDuration(Number(v) as 5 | 10)}>
+        <SelectTrigger className="mt-1 h-9">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="5">5 secondes</SelectItem>
+          <SelectItem value="10">10 secondes</SelectItem>
+        </SelectContent>
+      </Select>
     </div>
+  );
+
+  return (
+    <VideoToolLayout
+      title="Video Extend"
+      description="Prolongez vos vidéos avec l'IA en décrivant ce qui doit se passer ensuite."
+      icon={<Plus className="w-10 h-10 text-white" />}
+      iconGradient="bg-gradient-to-br from-teal-500 to-emerald-500"
+      prompt={prompt}
+      setPrompt={setPrompt}
+      promptPlaceholder="Ex: Le personnage se retourne et commence à courir vers la caméra..."
+      sourceMedia={videoUrl}
+      sourceMediaType="video"
+      onSourceMediaChange={setVideoUrl}
+      sourceMediaLabel="Vidéo source"
+      resultVideo={resultVideo}
+      isProcessing={isProcessing}
+      progress={progress}
+      onGenerate={extendVideo}
+      generateLabel="Prolonger la vidéo"
+      generateDisabled={!videoUrl || !prompt.trim()}
+      controlsPanel={controlsPanel}
+      historyItems={history}
+      onHistorySelect={(item) => setResultVideo(item)}
+    />
   );
 };
 
