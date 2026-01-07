@@ -1,20 +1,20 @@
 import { useState } from 'react';
-import { Header } from '@/components/layout/Header';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { ToolLayout } from '@/components/tools/ToolLayout';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
 import { supabase } from '@/integrations/supabase/client';
-import { Loader2, Download, Palette, Sparkles } from 'lucide-react';
 
 const Patterns = () => {
   const { user } = useAuth();
   const { toast } = useToast();
   const [prompt, setPrompt] = useState('');
+  const [patternImage, setPatternImage] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [historyItems, setHistoryItems] = useState<string[]>([]);
   
   // Pattern parameters
   const [patternType, setPatternType] = useState('geometric');
@@ -35,8 +35,6 @@ const Patterns = () => {
 
     setIsGenerating(true);
     try {
-      // Patterns: Like Artbreeder - combine a pattern/texture with a description
-      // The pattern influences the visual style of the generated image
       const typeMap: Record<string, string> = {
         'geometric': 'geometric shapes, mathematical precision, clean lines',
         'organic': 'organic flowing forms, natural curves, biomorphic shapes',
@@ -54,11 +52,12 @@ const Patterns = () => {
         'vintage': 'vintage muted colors, aged nostalgic palette'
       };
 
-      const patternPrompt = `Create ${prompt} using a ${patternType} pattern style. ${typeMap[patternType] || ''}. Color scheme: ${colorMap[colorScheme] || colorScheme}. Detail complexity: ${complexity}% (${complexity < 30 ? 'minimal simple' : complexity < 70 ? 'moderate' : 'highly intricate detailed'}). ${seamless ? 'IMPORTANT: Make this a seamless tileable pattern that repeats perfectly on all edges.' : 'This is a standalone artwork, not necessarily tileable.'}`;
+      const patternPrompt = `Create ${prompt} using a ${patternType} pattern style. ${typeMap[patternType] || ''}. Color scheme: ${colorMap[colorScheme] || colorScheme}. Detail complexity: ${complexity}%. ${seamless ? 'Make this a seamless tileable pattern.' : ''}`;
 
       const { data, error } = await supabase.functions.invoke('generate-image', {
         body: {
           prompt: patternPrompt,
+          patternImageUrl: patternImage,
           type: 'pattern'
         }
       });
@@ -67,6 +66,7 @@ const Patterns = () => {
 
       if (data?.imageUrl) {
         setGeneratedImage(data.imageUrl);
+        setHistoryItems((prev) => [data.imageUrl, ...prev.slice(0, 9)]);
         toast({ title: "Pattern généré !" });
       }
     } catch (error) {
@@ -77,162 +77,128 @@ const Patterns = () => {
     }
   };
 
-  const handleDownload = () => {
+  const handleVary = async () => {
     if (!generatedImage) return;
-    const link = document.createElement('a');
-    link.href = generatedImage;
-    link.download = `pattern-${Date.now()}.png`;
-    link.click();
+    setIsGenerating(true);
+    try {
+      const { data } = await supabase.functions.invoke('generate-image', {
+        body: { prompt: `Create a variation of this pattern: ${prompt}`, baseImageUrl: generatedImage, type: 'pattern' }
+      });
+      if (data?.imageUrl) {
+        setGeneratedImage(data.imageUrl);
+        setHistoryItems((prev) => [data.imageUrl, ...prev.slice(0, 9)]);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
   };
 
-  return (
-    <div className="min-h-screen bg-background">
-      <Header />
-      
-      <main className="pt-24 pb-16 px-4 sm:px-6 lg:px-8">
-        <div className="max-w-6xl mx-auto">
-          {/* Header */}
-          <div className="text-center mb-8">
-            <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-amber-500 to-orange-500 mb-4">
-              <Palette className="w-8 h-8 text-white" />
-            </div>
-            <h1 className="text-3xl font-bold mb-2">Patterns</h1>
-            <p className="text-muted-foreground">Créez des motifs et textures pour vos projets design</p>
-          </div>
+  const handleEnhance = async () => {
+    if (!generatedImage) return;
+    setIsGenerating(true);
+    try {
+      const { data } = await supabase.functions.invoke('generate-image', {
+        body: { prompt: 'Enhance pattern details and colors', baseImageUrl: generatedImage, type: 'tune' }
+      });
+      if (data?.imageUrl) {
+        setGeneratedImage(data.imageUrl);
+        setHistoryItems((prev) => [data.imageUrl, ...prev.slice(0, 9)]);
+      }
+    } finally {
+      setIsGenerating(false);
+    }
+  };
 
-          <div className="grid lg:grid-cols-2 gap-8">
-            {/* Left: Controls */}
-            <div className="glass-panel p-6 space-y-6">
-              <h2 className="text-lg font-semibold">Paramètres du pattern</h2>
-              
-              <div>
-                <label className="text-sm text-muted-foreground mb-2 block">Description</label>
-                <Input
-                  value={prompt}
-                  onChange={(e) => setPrompt(e.target.value)}
-                  placeholder="Ex: feuilles tropicales, vagues japonaises..."
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="text-sm text-muted-foreground mb-2 block">Type</label>
-                  <Select value={patternType} onValueChange={setPatternType}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="geometric">Géométrique</SelectItem>
-                      <SelectItem value="organic">Organique</SelectItem>
-                      <SelectItem value="floral">Floral</SelectItem>
-                      <SelectItem value="abstract">Abstrait</SelectItem>
-                      <SelectItem value="tribal">Tribal</SelectItem>
-                      <SelectItem value="art-deco">Art Déco</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div>
-                  <label className="text-sm text-muted-foreground mb-2 block">Palette</label>
-                  <Select value={colorScheme} onValueChange={setColorScheme}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="vibrant">Vibrant</SelectItem>
-                      <SelectItem value="pastel">Pastel</SelectItem>
-                      <SelectItem value="monochrome">Monochrome</SelectItem>
-                      <SelectItem value="earth">Terreux</SelectItem>
-                      <SelectItem value="neon">Néon</SelectItem>
-                      <SelectItem value="vintage">Vintage</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-sm text-muted-foreground mb-2 block">Complexité: {complexity}%</label>
-                <Slider
-                  value={[complexity]}
-                  onValueChange={([v]) => setComplexity(v)}
-                  min={10}
-                  max={100}
-                  step={10}
-                />
-              </div>
-
-              <div className="flex items-center justify-between">
-                <label className="text-sm text-muted-foreground">Pattern sans couture (tileable)</label>
-                <Button 
-                  variant={seamless ? "default" : "outline"} 
-                  size="sm"
-                  onClick={() => setSeamless(!seamless)}
-                >
-                  {seamless ? "Activé" : "Désactivé"}
-                </Button>
-              </div>
-
-              <Button 
-                onClick={handleGenerate}
-                disabled={isGenerating || !prompt.trim()}
-                className="w-full gradient-primary"
-              >
-                {isGenerating ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Génération en cours...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="w-4 h-4 mr-2" />
-                    Générer le pattern
-                  </>
-                )}
-              </Button>
-            </div>
-
-            {/* Right: Result */}
-            <div className="glass-panel p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Résultat</h2>
-                {generatedImage && (
-                  <Button variant="outline" size="sm" onClick={handleDownload}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Télécharger
-                  </Button>
-                )}
-              </div>
-              
-              <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
-                {generatedImage ? (
-                  <img src={generatedImage} alt="Generated pattern" className="w-full h-full object-contain" />
-                ) : (
-                  <div className="text-center text-muted-foreground">
-                    <Palette className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>Le pattern apparaîtra ici</p>
-                  </div>
-                )}
-              </div>
-
-              {/* Preview tiled */}
-              {generatedImage && seamless && (
-                <div className="mt-4">
-                  <label className="text-sm text-muted-foreground mb-2 block">Aperçu en mosaïque</label>
-                  <div 
-                    className="h-32 rounded-lg"
-                    style={{
-                      backgroundImage: `url(${generatedImage})`,
-                      backgroundSize: '64px 64px',
-                      backgroundRepeat: 'repeat'
-                    }}
-                  />
-                </div>
-              )}
-            </div>
-          </div>
+  const controlsPanel = (
+    <div className="space-y-4 mt-4">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Type</label>
+          <Select value={patternType} onValueChange={setPatternType}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="geometric">Géométrique</SelectItem>
+              <SelectItem value="organic">Organique</SelectItem>
+              <SelectItem value="floral">Floral</SelectItem>
+              <SelectItem value="abstract">Abstrait</SelectItem>
+              <SelectItem value="tribal">Tribal</SelectItem>
+              <SelectItem value="art-deco">Art Déco</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
-      </main>
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Palette</label>
+          <Select value={colorScheme} onValueChange={setColorScheme}>
+            <SelectTrigger className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="vibrant">Vibrant</SelectItem>
+              <SelectItem value="pastel">Pastel</SelectItem>
+              <SelectItem value="monochrome">Monochrome</SelectItem>
+              <SelectItem value="earth">Terreux</SelectItem>
+              <SelectItem value="neon">Néon</SelectItem>
+              <SelectItem value="vintage">Vintage</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      <div>
+        <div className="flex justify-between text-xs mb-1">
+          <span className="text-muted-foreground">Complexity</span>
+          <span className="text-primary">{complexity}%</span>
+        </div>
+        <Slider value={[complexity]} onValueChange={([v]) => setComplexity(v)} min={10} max={100} step={10} />
+      </div>
+
+      <Button 
+        variant={seamless ? "default" : "outline"} 
+        size="sm"
+        onClick={() => setSeamless(!seamless)}
+        className="w-full text-xs"
+      >
+        {seamless ? "✓ Seamless Tileable" : "Non-tileable"}
+      </Button>
+
+      {generatedImage && seamless && (
+        <div>
+          <label className="text-xs text-muted-foreground mb-1 block">Tiled Preview</label>
+          <div 
+            className="h-16 rounded-lg border border-border/50"
+            style={{
+              backgroundImage: `url(${generatedImage})`,
+              backgroundSize: '48px 48px',
+              backgroundRepeat: 'repeat'
+            }}
+          />
+        </div>
+      )}
     </div>
+  );
+
+  return (
+    <ToolLayout
+      title="Patterns"
+      description="Create seamless patterns and textures for your designs"
+      prompt={prompt}
+      setPrompt={setPrompt}
+      generatedImage={generatedImage}
+      baseImage={patternImage}
+      onBaseImageChange={setPatternImage}
+      isGenerating={isGenerating}
+      onGenerate={handleGenerate}
+      onVary={handleVary}
+      onEnhance={handleEnhance}
+      onClear={() => { setGeneratedImage(null); setPrompt(''); setPatternImage(null); }}
+      generateLabel="Generate Pattern"
+      promptPlaceholder="Ex: feuilles tropicales, vagues japonaises..."
+      historyItems={historyItems}
+      onHistorySelect={setGeneratedImage}
+      controlsPanel={controlsPanel}
+    />
   );
 };
 
