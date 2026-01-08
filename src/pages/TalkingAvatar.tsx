@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { createTalkingAvatar, textToImage, pollVideo } from '@/lib/gemini';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -31,13 +32,16 @@ const TalkingAvatar = () => {
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
 
-    const handleGenerateAvatar = () => {
+    const handleGenerateAvatar = async () => {
         if (!avatarPrompt.trim()) return;
         setIsGeneratingAvatar(true);
-        setTimeout(() => {
-            setAvatarImage('https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=512&h=512&fit=crop');
-            setIsGeneratingAvatar(false);
-        }, 2000);
+        try {
+            const res = await textToImage(avatarPrompt, { style: avatarStyle });
+            if (res.success && res.imageUrl) {
+                setAvatarImage(res.imageUrl);
+            }
+        } catch (e) { console.error(e); }
+        finally { setIsGeneratingAvatar(false); }
     };
 
     const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -49,13 +53,19 @@ const TalkingAvatar = () => {
         }
     };
 
-    const handleProcess = () => {
+    const handleProcess = async () => {
         if (!avatarImage || !script.trim()) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
-            setIsProcessing(false);
-        }, 5000);
+        try {
+            const res = await createTalkingAvatar(avatarImage, script);
+            if (res.success && res.operationName) {
+                const finalRes = await pollVideo(res.operationName);
+                if (finalRes.success && finalRes.videoUrl) {
+                    setResult(finalRes.videoUrl);
+                }
+            }
+        } catch (e) { console.error(e); }
+        finally { setIsProcessing(false); }
     };
 
     return (

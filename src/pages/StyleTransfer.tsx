@@ -5,6 +5,8 @@ import { Slider } from '@/components/ui/slider';
 import { Upload, Palette, Wand2, RefreshCw, Download, ArrowRight, Sparkles, AlertCircle } from 'lucide-react';
 import { styleTransfer } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 
 const stylePresets = [
     { id: 'van-gogh', label: 'Van Gogh', image: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?w=512&h=512&fit=crop' },
@@ -30,6 +32,8 @@ const StyleTransfer = () => {
     const [result, setResult] = useState<string | null>(null);
     const [isProcessing, setIsProcessing] = useState(false);
     const [activeTab, setActiveTab] = useState<'presets' | 'custom'>('presets');
+    const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
+    const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
 
@@ -37,9 +41,19 @@ const StyleTransfer = () => {
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
-            reader.onload = (event) => {
-                setContentImage(event.target?.result as string);
+            reader.onload = async (event) => {
+                const b64 = event.target?.result as string;
+                setContentImage(b64);
                 setResult(null);
+                try {
+                    const dims = await getImageDimensions(b64);
+                    setDetectedDimensions(dims);
+                    if (dims.width > dims.height) setAspectRatio('4:3');
+                    else if (dims.height > dims.width) setAspectRatio('3:4');
+                    else setAspectRatio('1:1');
+                } catch (e) {
+                    console.error("Dim detection failed", e);
+                }
             };
             reader.readAsDataURL(file);
         }
@@ -230,6 +244,14 @@ const StyleTransfer = () => {
                                         )}
                                     </label>
                                 )}
+                            </div>
+
+                            <div className="tool-card p-4">
+                                <AspectRatioSelector
+                                    value={aspectRatio}
+                                    onChange={setAspectRatio}
+                                    customDimensions={detectedDimensions}
+                                />
                             </div>
 
                             {/* Settings */}

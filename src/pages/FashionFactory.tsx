@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { fashionFactory } from '@/lib/gemini';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -51,18 +52,21 @@ const FashionFactory = () => {
 
     const removeModel = (index: number) => setModelImages(prev => prev.filter((_, i) => i !== index));
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (!productImage) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResults([
-                'https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=400&h=500&fit=crop',
-                'https://images.unsplash.com/photo-1529139574466-a303027c1d8b?w=400&h=500&fit=crop',
-                'https://images.unsplash.com/photo-1496747611176-843222e1e57c?w=400&h=500&fit=crop',
-                'https://images.unsplash.com/photo-1509631179647-0177331693ae?w=400&h=500&fit=crop',
-            ]);
+        try {
+            const res = await fashionFactory(productImage, modelImages, pose, setting);
+            if (res.success && res.imageUrl) {
+                setResults([res.imageUrl]); // For now, single image
+            } else {
+                console.error("Fashion Generation failed:", res.error);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
             setIsProcessing(false);
-        }, 4000);
+        }
     };
 
     return (

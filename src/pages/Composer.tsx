@@ -31,6 +31,8 @@ import {
   Box
 } from 'lucide-react';
 import { composeImages, textToImage } from '@/lib/gemini';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 
 const Composer = () => {
   const { user } = useAuth();
@@ -45,6 +47,8 @@ const Composer = () => {
 
   const [prompt, setPrompt] = useState('');
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
+  const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
 
   // Image states
   const [baseImage, setBaseImage] = useState<string | null>(null);
@@ -89,7 +93,10 @@ const Composer = () => {
             contentStrength: contentStrength[0],
             styleImages: styleImage ? [styleImage] : [],
             characterImages: charImage ? [charImage] : [],
-            objectImages: objImage ? [objImage] : []
+            objectImages: objImage ? [objImage] : [],
+            aspectRatio,
+            width: detectedDimensions?.width,
+            height: detectedDimensions?.height
           }
         );
       } else {
@@ -113,11 +120,25 @@ const Composer = () => {
     }
   };
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (s: string | null) => void) => {
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, setter: (s: string | null) => void, isBase: boolean = false) => {
     const file = e.target.files?.[0];
     if (file) {
       const reader = new FileReader();
-      reader.onloadend = () => setter(reader.result as string);
+      reader.onloadend = async () => {
+        const b64 = reader.result as string;
+        setter(b64);
+        if (isBase) {
+          try {
+            const dims = await getImageDimensions(b64);
+            setDetectedDimensions(dims);
+            if (dims.width > dims.height) setAspectRatio('16:9');
+            else if (dims.height > dims.width) setAspectRatio('9:16');
+            else setAspectRatio('1:1');
+          } catch (e) {
+            console.error("Dim detection failed", e);
+          }
+        }
+      };
       reader.readAsDataURL(file);
     }
   };
@@ -155,7 +176,7 @@ const Composer = () => {
   const UploadSlot = ({ label, icon: Icon, image, setImage, inputRef, colorClass }: any) => (
     <div className="relative group">
       <Label className="text-xs text-muted-foreground mb-1 block">{label}</Label>
-      <input ref={inputRef} type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setImage)} className="hidden" />
+      <input ref={inputRef} type="file" accept="image/*" onChange={(e) => handleImageUpload(e, setImage, label === "Base")} className="hidden" />
 
       {image ? (
         <div className="relative aspect-square w-full">
@@ -190,6 +211,14 @@ const Composer = () => {
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
                     className="min-h-[100px] resize-none bg-input/50 border-input"
+                  />
+                </div>
+
+                <div>
+                  <AspectRatioSelector
+                    value={aspectRatio}
+                    onChange={setAspectRatio}
+                    customDimensions={detectedDimensions}
                   />
                 </div>
 

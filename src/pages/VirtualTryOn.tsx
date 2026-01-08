@@ -1,8 +1,11 @@
 import { useState } from 'react';
+import { virtualTryOn } from '@/lib/gemini';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Upload, Shirt, Wand2, RefreshCw, Download, ArrowRight } from 'lucide-react';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 
 const clothingCategories = [
     { id: 'top', label: 'Top (Shirts, Jackets)' },
@@ -17,15 +20,32 @@ const VirtualTryOn = () => {
     const [category, setCategory] = useState('top');
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [aspectRatio, setAspectRatio] = useState<AspectRatio>('3:4');
+    const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
 
     const handleModelUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
-            reader.onload = (event) => { setModelImage(event.target?.result as string); setResult(null); };
+            reader.onload = async (event) => {
+                const b64 = event.target?.result as string;
+                setModelImage(b64);
+                setResult(null);
+                try {
+                    const dims = await getImageDimensions(b64);
+                    setDetectedDimensions(dims);
+                    // Match closest ratio or use 'custom' if we want, but for VTON let's stay simple
+                    if (dims.width > dims.height) setAspectRatio('4:3');
+                    else if (dims.height > dims.width) setAspectRatio('3:4');
+                    else setAspectRatio('1:1');
+                } catch (e) {
+                    console.error("Dim detection failed", e);
+                }
+            };
             reader.readAsDataURL(file);
         }
     };
+
 
     const handleClothingUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
@@ -36,13 +56,22 @@ const VirtualTryOn = () => {
         }
     };
 
-    const handleTryOn = () => {
+    const handleTryOn = async () => {
         if (!modelImage || !clothingImage) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://images.unsplash.com/photo-1515886657613-9f3515b0c78f?w=600&h=800&fit=crop');
+        try {
+            const res = await virtualTryOn(modelImage, clothingImage, category, aspectRatio);
+            if (res.success && res.imageUrl) {
+                setResult(res.imageUrl);
+            } else {
+                console.error("Try-on failed:", res.error);
+                // toast error?
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
             setIsProcessing(false);
-        }, 4000);
+        }
     };
 
     return (
@@ -95,6 +124,14 @@ const VirtualTryOn = () => {
                                         )}
                                     </label>
                                 </div>
+                            </div>
+
+                            <div className="tool-card p-4">
+                                <AspectRatioSelector
+                                    value={aspectRatio}
+                                    onChange={setAspectRatio}
+                                    customDimensions={detectedDimensions}
+                                />
                             </div>
 
                             <div className="tool-card p-4">

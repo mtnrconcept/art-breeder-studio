@@ -1,101 +1,95 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, corsOptionsResponse } from "../_shared/cors.ts";
-import { googleGetJson } from "../_shared/google.ts";
-import { uploadBase64PngToBucket } from "../_shared/storage.ts"; // reuse for video? logic slightly diff
+import { falStatus, falResult } from "../_shared/fal.ts"; // Shared Fal client
+import { siliconFlowGetVideoStatus } from "../_shared/siliconflow.ts";
 
 type GetVideoOpRequest = {
-    operationName: string;
+    operationName: string; // This is the Fal Request ID
     userId?: string;
-    saveToBucket?: boolean;
 };
-
-type VeoOperation = {
-    name?: string;
-    done?: boolean;
-    error?: { message?: string; code?: number; status?: string };
-    response?: {
-        // Veo response structure can vary.
-        // Sometimes wrapped in "result" or "response"
-        predictions?: Array<{
-            video?: { uri?: string; bytesBase64Encoded?: string };
-            bytesBase64Encoded?: string;
-        }>;
-        // Or sometimes generic
-        [key: string]: any;
-    };
-};
-
-function extractVideoData(op: VeoOperation): { uri?: string, b64?: string } {
-    // Try finding URI or Base64 in standard prediction locations
-    const preds = op.response?.predictions || (op.response as any)?.result?.predictions; // Handle various wrappings
-    if (!preds?.[0]) return {};
-
-    const p = preds[0];
-    if (p.video?.uri) return { uri: p.video.uri };
-    if (p.video?.bytesBase64Encoded) return { b64: p.video.bytesBase64Encoded };
-    if (p.bytesBase64Encoded) return { b64: p.bytesBase64Encoded };
-
-    return {};
-}
 
 serve(async (request) => {
     if (request.method === "OPTIONS") return corsOptionsResponse();
 
     try {
         const body = await request.json() as GetVideoOpRequest;
-        if (!body?.operationName) {
-            return new Response(JSON.stringify({ error: "Missing operationName" }), {
-                status: 400,
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-        }
+        if (!body?.operationName) throw new Error("Missing operationName");
 
-        const op = await googleGetJson<VeoOperation>(body.operationName);
+        // Check Status (SiliconFlow vs Fal)
+        // Simple heuristic: Try Fal first, but SiliconFlow IDs might be longer or if Fal fails we check SF
+        let status: any;
+        let isSiliconFlow = false;
 
-        if (op.error?.message) {
-            return new Response(JSON.stringify({ done: true, error: op.error.message }), {
-                headers: { ...corsHeaders, "Content-Type": "application/json" },
-            });
-        }
-
-        const done = op.done === true;
-        let videoUrl: string | undefined;
-
-        if (done) {
-            const { uri, b64 } = extractVideoData(op);
-
-            if (uri) videoUrl = uri; // Direct link
-            else if (b64) videoUrl = `data:video/mp4;base64,${b64}`;
-
-            // Storage Logic (if b64 available and userId present)
-            if (b64 && body.userId) {
-                const bucket = "generations";
-                const path = `${body.userId}/videos/${Date.now()}.mp4`;
-                // Reuse upload helper (renaming it slightly in import or just using it if it supports bytes)
-                // `uploadBase64PngToBucket` forces "image/png" contentType.
-                // We need a video uploader. 
-                // Quick fix: Import supabase client and do it manually here for video.
-
-                try {
-                    // Just return the Data URL for now to allow Client to handle or keep it simple
-                    // The prompt didn't strictly require saving video in EF, but client might expect URL.
-                    // Veo often returns URI (which is temporary).
-                } catch (e) { console.error("Video save fail", e); }
+        try {
+            status = await falStatus(body.operationName);
+        } catch (e) {
+            console.log("Fal status check failed, trying SiliconFlow...");
+            try {
+                const sfStatus = await siliconFlowGetVideoStatus(body.operationName);
+                isSiliconFlow = true;
+                // Normalize SF status to our internal format
+                // SF Succeed: { code: 20000, data: { status: "Succeed", results: { video: "..." } } }
+                if (sfStatus.code === 20000) {
+                    const sfData = sfStatus.data;
+                    if (sfData.status === "Succeed") {
+                        return new Response(JSON.stringify({
+                            done: true,
+                            videoUrl: sfData.results.video
+                        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    } else if (sfData.status === "Failed") {
+                        return new Response(JSON.stringify({
+                            done: true,
+                            error: sfData.reason || "SiliconFlow Failed"
+                        }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+                    } else {
+                        // Pending/Processing
+                        return new Response(JSON.stringify({ done: false }), {
+                            headers: { ...corsHeaders, "Content-Type": "application/json" },
+                        });
+                    }
+                }
+                throw new Error("SF Status check returned unexpected format");
+            } catch (sfErr) {
+                console.error("Both Fal and SF status checks failed:", sfErr);
+                throw e; // Re-throw original fal error if both fail
             }
         }
 
-        return new Response(JSON.stringify({
-            done,
-            videoUrl,
-            operation: op // helpful debug
-        }), {
-            headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
+        // Fal.ai Logic (if Fal succeeded)
+        console.log(`[Fal Status] ${body.operationName}: ${status.status}`);
+
+        if (status.status === "COMPLETED") {
+            // Fetch Result
+            const result = await falResult(body.operationName);
+            // Result usually: { video: { url: ... } } or { images: ... } depending on model
+            // Kling: { video: { url: "..." } }
+
+            let videoUrl = result.video?.url || result.video_url; // Handle variants
+
+            // Note: Fal video URLs are usually temporary or CDN based.
+            // We return it directly. Client can download or we can implement upload here if strictly needed.
+            // Keeping it consistent with previous logic: return URL.
+
+            return new Response(JSON.stringify({
+                done: true,
+                videoUrl
+            }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else if (status.status === "FAILED") {
+            return new Response(JSON.stringify({
+                done: true,
+                error: status.error || "Fal Job Failed"
+            }), { headers: { ...corsHeaders, "Content-Type": "application/json" } });
+        } else {
+            // Pending
+            return new Response(JSON.stringify({ done: false }), {
+                headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+        }
+
     } catch (err) {
         console.error("[get-video-operation] error:", err);
-        const message = err instanceof Error ? err.message : "Unknown error";
-        return new Response(JSON.stringify({ done: true, error: message }), {
+        return new Response(JSON.stringify({ done: true, error: (err as Error).message }), {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

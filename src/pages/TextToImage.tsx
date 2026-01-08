@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { AspectRatioSelector } from '@/components/shared/AspectRatioSelector';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -203,21 +204,10 @@ const TextToImage = () => {
                   </Select>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium mb-3">Aspect Ratio</label>
-                  <Select value={aspectRatio} onValueChange={setAspectRatio}>
-                    <SelectTrigger>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {aspectRatios.map((ratio) => (
-                        <SelectItem key={ratio.id} value={ratio.id}>
-                          {ratio.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                <AspectRatioSelector
+                  value={aspectRatio as any}
+                  onChange={setAspectRatio}
+                />
 
                 <div>
                   <label className="block text-sm font-medium mb-3">Number of Images</label>

@@ -5,6 +5,8 @@ import { Slider } from '@/components/ui/slider';
 import { Upload, Lightbulb, Wand2, RefreshCw, AlertCircle } from 'lucide-react';
 import { generateImage, generateVideo } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 
 const RelightScene = () => {
     const [media, setMedia] = useState<string | null>(null);
@@ -16,6 +18,8 @@ const RelightScene = () => {
     const [shadowSoftness, setShadowSoftness] = useState([50]);
     const [isProcessing, setIsProcessing] = useState(false);
     const [result, setResult] = useState<string | null>(null);
+    const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
+    const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
     const [error, setError] = useState<string | null>(null);
     const { toast } = useToast();
 
@@ -26,9 +30,22 @@ const RelightScene = () => {
             setMediaType(isVideo ? 'video' : 'image');
             if (isVideo) {
                 setMedia(URL.createObjectURL(file));
+                setDetectedDimensions(undefined);
             } else {
                 const reader = new FileReader();
-                reader.onload = (event) => setMedia(event.target?.result as string);
+                reader.onload = async (event) => {
+                    const b64 = event.target?.result as string;
+                    setMedia(b64);
+                    try {
+                        const dims = await getImageDimensions(b64);
+                        setDetectedDimensions(dims);
+                        if (dims.width > dims.height) setAspectRatio('16:9');
+                        else if (dims.height > dims.width) setAspectRatio('9:16');
+                        else setAspectRatio('1:1');
+                    } catch (e) {
+                        console.error("Dim detection failed", e);
+                    }
+                };
                 reader.readAsDataURL(file);
             }
             setResult(null);
@@ -53,14 +70,18 @@ const RelightScene = () => {
 
             let res;
             if (mediaType === 'image') {
-                res = await generateImage({
-                    prompt: relightPrompt,
-                    baseImageUrl: media,
-                    type: 'tune',
+                res = await generateImage(relightPrompt, {
+                    baseImage: media,
+                    aspectRatio,
+                    width: detectedDimensions?.width,
+                    height: detectedDimensions?.height,
+                    tool: 'relight'
                 });
             } else {
                 res = await generateVideo(relightPrompt, {
                     imageUrl: media,
+                    aspectRatio,
+                    tool: 'relight'
                 });
             }
 

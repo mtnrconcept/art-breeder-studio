@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { generateSoundEffects } from '@/lib/gemini';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -26,14 +27,22 @@ const SoundEffects = () => {
         if (file) { setVideo(URL.createObjectURL(file)); setMode('video'); }
     };
 
-    const handleGenerate = () => {
+    const handleGenerate = async () => {
         if (mode === 'text' && !prompt.trim()) return;
         if (mode === 'video' && !video) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setAudioResult('generated');
+        try {
+            const res = await generateSoundEffects(prompt, duration[0], category);
+            if (res.success && res.audioUrl) {
+                setAudioResult(res.audioUrl);
+            } else {
+                console.error("Audio generation failed:", res.error);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
             setIsProcessing(false);
-        }, 3000);
+        }
     };
 
     return (

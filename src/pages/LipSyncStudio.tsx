@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { syncLips, pollVideo } from '@/lib/gemini';
 import { Header } from '@/components/layout/Header';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -47,13 +48,28 @@ const LipSyncStudio = () => {
         if (file) { setAudioFile(file); setUseText(false); }
     };
 
-    const handleProcess = () => {
+    const handleProcess = async () => {
         if (!portrait || (!audioFile && !text.trim())) return;
         setIsProcessing(true);
-        setTimeout(() => {
-            setResult('https://sample-videos.com/video123/mp4/720/big_buck_bunny_720p_1mb.mp4');
+        try {
+            // If audio file passed, we might need to upload it first. 
+            // For now, let's focus on Text-to-Speech LipSync
+            const res = await syncLips(portrait, text);
+            if (res.success && res.operationName) {
+                const finalRes = await pollVideo(res.operationName);
+                if (finalRes.success && finalRes.videoUrl) {
+                    setResult(finalRes.videoUrl);
+                } else {
+                    console.error("Poll failed:", finalRes.error);
+                }
+            } else {
+                console.error("LipSync submission failed:", res.error);
+            }
+        } catch (e) {
+            console.error(e);
+        } finally {
             setIsProcessing(false);
-        }, 5000);
+        }
     };
 
     return (

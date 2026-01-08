@@ -10,10 +10,11 @@ export function getServiceSupabaseClient() {
     return createClient(supabaseUrl, serviceKey);
 }
 
-export async function uploadBase64PngToBucket(params: {
+export async function uploadBase64ToBucket(params: {
     bucket: string;
     path: string;
     base64DataUrlOrRaw: string;
+    contentType?: string;
 }): Promise<string> {
     const supabase = getServiceSupabaseClient();
     const bytes = base64ToUint8Array(params.base64DataUrlOrRaw);
@@ -21,7 +22,7 @@ export async function uploadBase64PngToBucket(params: {
     const { error } = await supabase.storage.from(params.bucket).upload(
         params.path,
         bytes,
-        { contentType: "image/png", upsert: false },
+        { contentType: params.contentType || "image/png", upsert: false },
     );
 
     if (error) throw new Error(`Storage upload failed: ${error.message}`);
@@ -30,3 +31,6 @@ export async function uploadBase64PngToBucket(params: {
     if (!data?.publicUrl) throw new Error("Storage public URL missing");
     return data.publicUrl;
 }
+
+// Keep alias for compatibility
+export const uploadBase64PngToBucket = (params: any) => uploadBase64ToBucket({ ...params, contentType: "image/png" });

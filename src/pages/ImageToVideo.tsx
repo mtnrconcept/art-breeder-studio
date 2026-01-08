@@ -8,6 +8,8 @@ import { Switch } from '@/components/ui/switch';
 import { Upload, Video, Wand2, RefreshCw, Download, Play, Pause, Move, AlertCircle } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 import { useVideoGeneration } from '@/hooks/use-video-generation';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 
 const ImageToVideo = () => {
     const [image, setImage] = useState<string | null>(null);
@@ -19,6 +21,8 @@ const ImageToVideo = () => {
     const [motionAmount, setMotionAmount] = useState([50]);
     const [isPlaying, setIsPlaying] = useState(false);
     const [motionBrushMode, setMotionBrushMode] = useState(false);
+    const [aspectRatio, setAspectRatio] = useState<AspectRatio>('16:9');
+    const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
     const canvasRef = useRef<HTMLCanvasElement>(null);
     const { isGenerating, videoUrl: generatedVideo, error, createVideo, setVideoUrl: setGeneratedVideo } = useVideoGeneration();
 
@@ -26,11 +30,21 @@ const ImageToVideo = () => {
         const file = e.target.files?.[0];
         if (file) {
             const reader = new FileReader();
-            reader.onload = (event) => {
+            reader.onload = async (event) => {
+                const b64 = event.target?.result as string;
                 if (isEnd) {
-                    setEndImage(event.target?.result as string);
+                    setEndImage(b64);
                 } else {
-                    setImage(event.target?.result as string);
+                    setImage(b64);
+                    try {
+                        const dims = await getImageDimensions(b64);
+                        setDetectedDimensions(dims);
+                        if (dims.width > dims.height) setAspectRatio('16:9');
+                        else if (dims.height > dims.width) setAspectRatio('9:16');
+                        else setAspectRatio('1:1');
+                    } catch (e) {
+                        console.error("Dim detection failed", e);
+                    }
                 }
             };
             reader.readAsDataURL(file);
@@ -42,6 +56,9 @@ const ImageToVideo = () => {
         const url = await createVideo(prompt, {
             imageUrl: image,
             duration: parseInt(duration),
+            aspectRatio,
+            width: detectedDimensions?.width,
+            height: detectedDimensions?.height,
             motionAmount: motionAmount[0],
         });
         if (url) setIsPlaying(true);
@@ -154,6 +171,14 @@ const ImageToVideo = () => {
                                     value={prompt}
                                     onChange={(e) => setPrompt(e.target.value)}
                                     className="min-h-[100px] resize-none"
+                                />
+                            </div>
+
+                            <div className="tool-card p-4">
+                                <AspectRatioSelector
+                                    value={aspectRatio}
+                                    onChange={setAspectRatio}
+                                    customDimensions={detectedDimensions}
                                 />
                             </div>
 

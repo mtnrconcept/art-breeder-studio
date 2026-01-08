@@ -5,7 +5,7 @@ import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Upload, ZoomIn, RefreshCw, Download, ArrowLeftRight, Sparkles, Image, AlertCircle } from 'lucide-react';
-import { generateImage } from '@/lib/gemini';
+import { upscaleImage } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
 
 const upscaleModels = [
@@ -48,12 +48,7 @@ const ImageUpscale = () => {
         setError(null);
 
         try {
-            const prompt = `Upscale this image to ${scaleFactor}x resolution. Enhance details, remove noise, and improve sharpness while maintaining the original content and style accurately.`;
-            const res = await generateImage({
-                prompt,
-                baseImageUrl: image,
-                type: 'tune', // Using tune for image-to-image enhancement
-            });
+            const res = await upscaleImage(image, scaleFactor);
 
             if (res.success && res.imageUrl) {
                 setResult(res.imageUrl);

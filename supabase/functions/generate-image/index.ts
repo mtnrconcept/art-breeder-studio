@@ -1,232 +1,228 @@
 
 import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, corsOptionsResponse } from "../_shared/cors.ts";
-import { stripDataUrlPrefix } from "../_shared/base64.ts";
-import { googlePostJson, googleGetJson } from "../_shared/google.ts";
+import { falPostJson } from "../_shared/fal.ts";
+import { togetherPostJson } from "../_shared/together.ts";
+import { siliconFlowPostJson } from "../_shared/siliconflow.ts";
+import { huggingFacePost } from "../_shared/huggingface.ts";
 import { uploadBase64PngToBucket } from "../_shared/storage.ts";
-import { TOOLS, MODELS, ToolId } from "../_shared/prompts/catalogue.ts";
+import { TOOLS, ToolId } from "../_shared/prompts/catalogue.ts"; // Only imports needed
 import {
   PromptComponents,
   buildTextToImagePrompt,
-  buildStyleTransferPrompt,
-  buildInpaintPrompt,
-  buildRelightPrompt
+  buildStyleTransferPrompt
 } from "../_shared/prompts/templates.ts";
 
-type Provider = "gemini" | "imagen";
-
-interface GenerateImageRequest {
-  // Routing
-  tool?: ToolId;
-  components?: PromptComponents;
-
-  // Explicit overrides
-  provider?: Provider; // default "gemini" or inferred from tool
-  prompt?: string;
-
-  // Configuration
-  model?: string; // override
-  aspectRatio?: string;
-  imageSize?: "1K" | "2K" | "4K";
-  responseModalities?: ("Image" | "Text")[];
-
-  // Specifics
-  baseImageBase64?: string; // unified
-  baseImage?: string; // legacy support (alias to baseImageBase64)
-
-  // Composer specific
-  styleImage?: string;
-  charImage?: string;
-  objectImage?: string;
-
-  // User
-  userId?: string;
-  saveToBucket?: boolean;
-  bucket?: string;
-  prefix?: string;
-}
-
-type GeminiGenerateContentResponse = {
-  candidates?: Array<{
-    content?: {
-      parts?: Array<
-        | { text?: string }
-        | { inlineData?: { mimeType?: string; data?: string } }
-        | { inline_data?: { mime_type?: string; data?: string } }
-      >;
-    };
-  }>;
+// Constants moved out to avoid recreation
+const AR_MAP: Record<string, string> = {
+  "16:9": "landscape_16_9",
+  "9:16": "portrait_16_9",
+  "1:1": "square_hd",
+  "4:3": "landscape_4_3",
+  "3:4": "portrait_4_3",
+  "2:3": "portrait_4_3", // Fallback or direct if supported
+  "3:2": "landscape_4_3"
 };
 
-// --- BUILDERS FROM USER SNIPPET ---
-
-function buildGeminiBody(req: GenerateImageRequest, actualPrompt: string) {
-  const parts: any[] = [{ text: actualPrompt }];
-
-  // Handle Base Image (Conditioning/Editing)
-  const b64 = req.baseImageBase64 || req.baseImage;
-  if (b64) {
-    const data = stripDataUrlPrefix(b64);
-    parts.push({
-      inline_data: {
-        mime_type: "image/png",
-        data,
-      },
-    });
-  }
-
-  const generationConfig: any = {};
-  const modalities = req.responseModalities?.length
-    ? req.responseModalities
-    : ["Image"];
-  generationConfig.responseModalities = modalities;
-
-  if (req.aspectRatio || req.imageSize) {
-    generationConfig.imageConfig = {};
-    if (req.aspectRatio) generationConfig.imageConfig.aspectRatio = req.aspectRatio;
-    if (req.imageSize) generationConfig.imageConfig.imageSize = req.imageSize;
-  }
-
-  return {
-    contents: [{ parts }],
-    generationConfig,
-  };
+function normalizeImageInput(b64orUrl: string): string {
+  if (!b64orUrl) return "";
+  if (b64orUrl.startsWith("http")) return b64orUrl;
+  if (b64orUrl.startsWith("data:")) return b64orUrl;
+  return `data:image/png;base64,${b64orUrl}`;
 }
 
-function extractGeminiBase64Png(resp: GeminiGenerateContentResponse): string {
-  const parts = resp.candidates?.[0]?.content?.parts ?? [];
-  for (const p of parts) {
-    const inline = (p as any).inlineData ?? (p as any).inline_data;
-    if (inline?.data) return inline.data;
-  }
-  // Debug text fallback
-  const textPart = parts.find((p: any) => p.text);
-  if (textPart) throw new Error(`Gemini returned text: ${(textPart as any).text}`);
-
-  throw new Error("No image returned by Gemini (inlineData missing)");
-}
-
-
-// --- COMPOSER LOGIC RE-INTEGRATION ---
-async function handleComposer(req: GenerateImageRequest): Promise<string> {
-  // 1. Fusion using Gemini 2.0 Flash (Text Model)
-  // We use the same googlePostJson infrastructure
-  const fusionModel = "models/gemini-2.0-flash";
-  const parts: any[] = [];
-  const instruction = req.prompt || req.components?.subject || "Create art";
-
-  parts.push({ text: `Role: Art Director. Task: Merge these visual conceptual inputs into a single detailed image description prompt.\nInstruction: ${instruction}\n` });
-
-  const addImg = (url?: string, label?: string) => {
-    if (!url) return;
-    const data = stripDataUrlPrefix(url);
-    parts.push({ text: `\n[${label}]` });
-    parts.push({ inline_data: { mime_type: "image/png", data } });
-  };
-
-  if (req.styleImage) addImg(req.styleImage, "Style Ref");
-  if (req.charImage) addImg(req.charImage, "Character Ref");
-  if (req.objectImage) addImg(req.objectImage, "Object Ref");
-  if (req.baseImage) addImg(req.baseImage, "Layout Ref");
-
-  parts.push({ text: "\nOutput ONLY the final prompt." });
-
-  const fusionResp = await googlePostJson<GeminiGenerateContentResponse>(
-    `/models/${fusionModel}:generateContent`,
-    { contents: [{ parts }] }
-  );
-
-  const fusedPrompt = fusionResp.candidates?.[0]?.content?.parts?.[0]?.text || instruction;
-
-  // 2. Generate Image using fused prompt (Recursively call geneation logic or direct)
-  // We use the DRAFT model (Nano Banana) as per catalogue
-  return generateWithGemini(req, fusedPrompt, MODELS.IMAGE.DRAFT);
-}
-
-async function generateWithGemini(req: GenerateImageRequest, prompt: string, modelOverride?: string): Promise<string> {
-  const model = modelOverride || req.model || "models/gemini-2.5-flash-image";
-  const resp = await googlePostJson<GeminiGenerateContentResponse>(
-    `/${model}:generateContent`,
-    buildGeminiBody(req, prompt),
-  );
-  return extractGeminiBase64Png(resp);
-}
-
-
-// --- MAIN HANDLER ---
-
-serve(async (request) => {
+serve(async (request: Request) => {
+  // 1. Handle CORS
   if (request.method === "OPTIONS") return corsOptionsResponse();
 
   try {
-    const body = await request.json() as GenerateImageRequest;
+    // 2. Parse Body safely
+    const body = await request.json();
 
-    // Resolve Logic
-    let base64Png: string = "";
+    // 3. Resolve Tool & Model
+    const toolId = body.tool as ToolId || 'text-to-image';
+    const toolDef = TOOLS[toolId] || TOOLS['text-to-image'];
+    let model = toolDef.model;
 
-    // Dispath based on Tool (if present) to build prompt
+    // --- FALLBACK LOGIC ---
+    if (body.useFallback) {
+      console.log(`[Fallback] Switching from primary model for tool: ${toolId}`);
+      if (toolId === 'text-to-image' || toolId === 'composer') {
+        model = "fal-ai/flux/schnell"; // Ultra-reliable and fast
+      } else if (toolId === 'virtual-try-on') {
+        model = "fal-ai/catvton"; // Alternative to IDM-VTON
+      } else if (toolId === 'upscale') {
+        model = "fal-ai/aura-sr"; // Switch to Aura SR if others fail
+      } else if (toolId === 'style-transfer') {
+        model = "fal-ai/flux/dev"; // Slightly more robust than 1.1 Ultra during peak
+      }
+      // Add other OS counterparts here
+    }
+
+    // 4. Build Prompt
     let finalPrompt = body.prompt || "";
 
-    if (body.tool === 'composer') {
-      base64Png = await handleComposer(body);
-      // Skip standard flow as composer did generation
+    if (body.components) {
+      // Use templates
+      if (toolId === 'text-to-image') finalPrompt = buildTextToImagePrompt(body.components);
+      else if (toolId === 'style-transfer') finalPrompt = buildStyleTransferPrompt(body.components);
+      else if (toolId === 'relight') finalPrompt = `Relight scene: ${body.components.lighting || 'studio'}`;
+      else if (body.components.subject) finalPrompt = body.components.subject;
+    }
+
+    // Composer / Splicer Fallback logic:
+    // Since we don't have multi-image fusion in Fal yet, we rely on the Prompt passed (e.g. "Splice these images...")
+    // and optionally the FIRST image as layout reference if mapped to baseImage.
+
+    // 5. Prepare Fal Payload
+    const payload: any = {
+      prompt: finalPrompt
+    };
+
+    // Aspect Ratio & Dimensions
+    if (body.width && body.height) {
+      payload.width = body.width;
+      payload.height = body.height;
+    } else if (body.aspectRatio && AR_MAP[body.aspectRatio]) {
+      payload.image_size = AR_MAP[body.aspectRatio];
     } else {
-      // Standard Flow
-      if (body.components) {
-        // Build prompt from templates
-        if (body.tool === 'text-to-image') finalPrompt = buildTextToImagePrompt(body.components);
-        else if (body.tool === 'style-transfer') finalPrompt = buildStyleTransferPrompt(body.components);
-        else if (body.tool === 'relight') finalPrompt = buildRelightPrompt(body.components.lighting || "light");
-        else if (body.tool === 'inpaint') finalPrompt = buildInpaintPrompt(body.components.action || "edit");
-        else if (body.components.subject) finalPrompt = body.components.subject;
-      }
+      payload.image_size = "landscape_16_9";
+    }
 
-      if (!finalPrompt) throw new Error("Missing prompt (and no components to build it)");
+    // Image Input Handling
+    const baseImg = body.baseImageBase64 || body.baseImage;
+    const maskImg = body.maskImageBase64 || body.maskImage;
+    const styleImg = body.styleImage || body.styleImageUrl;
+    const charImg = body.charImage;
 
-      // Select Provider/Model
-      // For now we stick to Gemini 2.5 Flash Image mostly
-      // If 'imagen' requested specifically:
-
-      if (body.provider === 'imagen') {
-        // ... Implement Imagen path if needed, but user emphasized Gemini mostly
-        // Using User's Imagen body builder if strictly needed
-        // For brevity and focus on fixing 400 with Gemini, I default to Gemini path
-        // But if the user wants Imagen Ultra:
-        // const model = body.model || "imagen-4.0-ultra-generate-001";
-        // ...
-        // Let's implement Gemini path for now as it's the main focus
-        // If tool is 'quality', we might switch.
-        base64Png = await generateWithGemini(body, finalPrompt);
+    if (toolId === 'virtual-try-on' && baseImg && styleImg) {
+      payload.human_image_url = normalizeImageInput(baseImg);
+      payload.garment_image_url = normalizeImageInput(styleImg);
+      // idm-vton doesn't use prompt usually, but we keep it
+    } else if (toolId === 'upscale' && baseImg) {
+      payload.image_url = normalizeImageInput(baseImg);
+    } else if (toolId === 'inpaint' && baseImg && maskImg) {
+      payload.image_url = normalizeImageInput(baseImg);
+      payload.mask_url = normalizeImageInput(maskImg);
+    } else if (baseImg) {
+      const imgUrl = normalizeImageInput(baseImg);
+      payload.image_url = imgUrl;
+      // Multi-image for Composer/Splicer
+      if (styleImg || charImg) {
+        payload.images = [
+          { url: imgUrl, label: "base" },
+          { url: normalizeImageInput(styleImg || ""), label: "style" },
+          { url: normalizeImageInput(charImg || ""), label: "character" }
+        ].filter(i => i.url);
       } else {
-        base64Png = await generateWithGemini(body, finalPrompt);
+        payload.images = [{ url: imgUrl }];
       }
     }
 
-    // Storage
-    let imageUrl = `data:image/png;base64,${base64Png}`;
-    const saveToBucket = body.saveToBucket !== false; // Default true if userId present? User snippet said default false but logic implied save. 
-    // Adapting to system behavior: usually we want to save.
+    console.log(`[Fal] Tool: ${toolId} -> ${model}`);
 
-    if (body.userId) { // always save if user present
+    // 6. Call Provider (Fal, Together, HuggingFace, or SiliconFlow)
+    let result: any;
+    const TOGETHER_KEY = Deno.env.get("TOGETHER_API_KEY");
+    const HF_TOKEN = Deno.env.get("HUGGINGFACE_TOKEN");
+    const SILICON_KEY = Deno.env.get("SILICONFLOW_API_KEY");
+
+    // Helper for large image base64
+    const toBase64 = (buf: ArrayBuffer) => {
+      const bytes = new Uint8Array(buf);
+      let binary = "";
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return btoa(binary);
+    };
+
+    if (body.useFallback) {
+      // Multi-Provider Fallback Logic: Try HF/SF first as user confirmed they are set
       try {
-        imageUrl = await uploadBase64PngToBucket({
+        if (HF_TOKEN) {
+          console.log(`[HF] Fallback for ${toolId}`);
+          const blob: any = await huggingFacePost("black-forest-labs/FLUX.1-schnell", { inputs: payload.prompt });
+          const arrayBuffer = await blob.arrayBuffer();
+          const b64 = toBase64(arrayBuffer);
+          result = { images: [{ url: `data:image/png;base64,${b64}` }] };
+        } else if (SILICON_KEY) {
+          console.log(`[SiliconFlow] Fallback for ${toolId}`);
+
+          // SiliconFlow expects "WIDTHxHEIGHT"
+          let sfSize = "1024x768"; // Default
+          if (payload.width && payload.height) {
+            sfSize = `${payload.width}x${payload.height}`;
+          } else if (body.aspectRatio) {
+            if (body.aspectRatio === "1:1") sfSize = "1024x1024";
+            else if (body.aspectRatio === "16:9") sfSize = "1024x576";
+            else if (body.aspectRatio === "9:16") sfSize = "576x1024";
+            else if (body.aspectRatio === "4:3") sfSize = "1024x768";
+            else if (body.aspectRatio === "3:4") sfSize = "768x1024";
+          }
+
+          result = await siliconFlowPostJson("images/generations", "black-forest-labs/FLUX.1-schnell", {
+            prompt: payload.prompt,
+            image_size: sfSize,
+            batch_size: 1,
+            num_inference_steps: 4
+          });
+        } else if (TOGETHER_KEY) {
+          console.log(`[Together AI] Fallback for ${toolId}`);
+          result = await togetherPostJson("black-forest-labs/FLUX.1-schnell", payload);
+        } else {
+          throw new Error("No fallback API keys available (HF, SiliconFlow, or Together)");
+        }
+      } catch (err: any) {
+        console.error("Free Fallback failed:", err.message);
+        throw err;
+      }
+    } else {
+      result = await falPostJson(model, payload);
+    }
+
+    // 7. Extract Image
+    const resultUrl = result.images?.[0]?.url;
+    if (!resultUrl) {
+      console.error("Fal Response Error:", JSON.stringify(result));
+      throw new Error(`Fal generation failed: ${JSON.stringify(result)}`);
+    }
+
+    // 8. Upload to Storage (Optional persistence)
+    let finalUrl = resultUrl;
+    if (body.userId) {
+      try {
+        const imgRes = await fetch(resultUrl);
+        const buf = await imgRes.arrayBuffer();
+        const b64 = toBase64(buf);
+
+        finalUrl = await uploadBase64PngToBucket({
           bucket: "generations",
           path: `${body.userId}/images/${Date.now()}.png`,
-          base64DataUrlOrRaw: base64Png,
+          base64DataUrlOrRaw: b64
         });
-      } catch (e) { console.error("Upload failed", e); }
+      } catch (e: any) {
+        console.warn("Storage upload failed:", e);
+      }
     }
 
-    return new Response(JSON.stringify({ imageUrl }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    return new Response(JSON.stringify({
+      imageUrl: finalUrl,
+      debugPrompt: finalPrompt,
+      debugPayload: payload
+    }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
 
-  } catch (err) {
-    console.error("[generate-image] error:", err);
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return new Response(JSON.stringify({ error: message }), {
+  } catch (err: any) {
+    const finalErrorMessage = err instanceof Error ? err.message : String(err);
+    console.error("Critical Gen Error:", finalErrorMessage);
+    return new Response(JSON.stringify({
+      error: finalErrorMessage,
+      stack: err instanceof Error ? err.stack : undefined
+    }), {
       status: 500,
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
+      headers: { ...corsHeaders, "Content-Type": "application/json" }
     });
   }
 });

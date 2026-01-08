@@ -4,10 +4,12 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Slider } from '@/components/ui/slider';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { generatePortrait } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { AspectRatioSelector, AspectRatio } from '@/components/shared/AspectRatioSelector';
+import { getImageDimensions } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { Upload, Loader2, Download, User, Sparkles, AlertCircle } from 'lucide-react';
-import { generatePortrait } from '@/lib/gemini';
 
 const Portraits = () => {
   const { user } = useAuth();
@@ -16,6 +18,8 @@ const Portraits = () => {
   const [referenceImage, setReferenceImage] = useState<string | null>(null);
   const [generatedImage, setGeneratedImage] = useState<string | null>(null);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [aspectRatio, setAspectRatio] = useState<AspectRatio>('1:1');
+  const [detectedDimensions, setDetectedDimensions] = useState<{ width: number, height: number } | undefined>();
   const [error, setError] = useState<string | null>(null);
 
   // Portrait parameters
@@ -29,7 +33,19 @@ const Portraits = () => {
     if (!file) return;
 
     const reader = new FileReader();
-    reader.onload = () => setReferenceImage(reader.result as string);
+    reader.onload = async () => {
+      const b64 = reader.result as string;
+      setReferenceImage(b64);
+      try {
+        const dims = await getImageDimensions(b64);
+        setDetectedDimensions(dims);
+        if (dims.width > dims.height) setAspectRatio('4:3');
+        else if (dims.height > dims.width) setAspectRatio('3:4');
+        else setAspectRatio('1:1');
+      } catch (e) {
+        console.error("Dim detection failed", e);
+      }
+    };
     reader.readAsDataURL(file);
   };
 
@@ -53,7 +69,11 @@ const Portraits = () => {
       const fullPrompt = `Portrait of a ${genderText}, age ${age}. ${styleMap[style] || style}. ${expression} expression. ${prompt}`;
 
       const result = await generatePortrait(fullPrompt, {
+        aspectRatio,
+        width: detectedDimensions?.width,
+        height: detectedDimensions?.height,
         style: style === 'realistic' ? 'photorealistic' : style,
+        baseImage: referenceImage || undefined
       });
 
       if (result.success && result.imageUrl) {
@@ -200,48 +220,54 @@ const Portraits = () => {
                   </Select>
                 </div>
 
-                <Button
-                  onClick={handleGenerate}
-                  disabled={isGenerating}
-                  className="w-full gradient-primary"
-                >
-                  {isGenerating ? (
-                    <>
-                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                      Génération en cours...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      Générer le portrait
-                    </>
-                  )}
-                </Button>
+                <AspectRatioSelector
+                  value={aspectRatio}
+                  onChange={setAspectRatio}
+                  customDimensions={detectedDimensions}
+                />
               </div>
+
+              <Button
+                onClick={handleGenerate}
+                disabled={isGenerating}
+                className="w-full gradient-primary"
+              >
+                {isGenerating ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Génération en cours...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4 mr-2" />
+                    Générer le portrait
+                  </>
+                )}
+              </Button>
+            </div>
+          </div>
+
+          {/* Right: Result */}
+          <div className="glass-panel p-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-lg font-semibold">Résultat</h2>
+              {generatedImage && (
+                <Button variant="outline" size="sm" onClick={handleDownload}>
+                  <Download className="w-4 h-4 mr-2" />
+                  Télécharger
+                </Button>
+              )}
             </div>
 
-            {/* Right: Result */}
-            <div className="glass-panel p-6">
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Résultat</h2>
-                {generatedImage && (
-                  <Button variant="outline" size="sm" onClick={handleDownload}>
-                    <Download className="w-4 h-4 mr-2" />
-                    Télécharger
-                  </Button>
-                )}
-              </div>
-
-              <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
-                {generatedImage ? (
-                  <img src={generatedImage} alt="Generated portrait" className="w-full h-full object-contain" />
-                ) : (
-                  <div className="text-center text-muted-foreground">
-                    <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                    <p>Le portrait apparaîtra ici</p>
-                  </div>
-                )}
-              </div>
+            <div className="aspect-square bg-card/50 rounded-lg overflow-hidden flex items-center justify-center">
+              {generatedImage ? (
+                <img src={generatedImage} alt="Generated portrait" className="w-full h-full object-contain" />
+              ) : (
+                <div className="text-center text-muted-foreground">
+                  <User className="w-12 h-12 mx-auto mb-2 opacity-50" />
+                  <p>Le portrait apparaîtra ici</p>
+                </div>
+              )}
             </div>
           </div>
         </div>
