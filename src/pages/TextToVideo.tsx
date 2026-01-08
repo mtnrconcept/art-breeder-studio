@@ -8,7 +8,7 @@ import { supabase } from '@/integrations/supabase/client';
 
 const TextToVideo = () => {
   const [prompt, setPrompt] = useState('');
-  const [model, setModel] = useState<'kling' | 'minimax' | 'veo3'>('kling');
+  const [model, setModel] = useState<'kling' | 'minimax' | 'veo3'>('veo3');
   const [duration, setDuration] = useState<5 | 10>(5);
   const [aspectRatio, setAspectRatio] = useState<'16:9' | '9:16' | '1:1'>('16:9');
   const [isGenerating, setIsGenerating] = useState(false);
@@ -65,9 +65,9 @@ const TextToVideo = () => {
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="kling">Kling v1.6</SelectItem>
+            <SelectItem value="veo3">Veo 3.1 (Meilleur)</SelectItem>
+            <SelectItem value="kling">Kling Pro</SelectItem>
             <SelectItem value="minimax">Minimax</SelectItem>
-            <SelectItem value="veo3">Veo3</SelectItem>
           </SelectContent>
         </Select>
       </div>

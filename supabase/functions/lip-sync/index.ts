@@ -13,6 +13,20 @@ interface LipSyncRequest {
   model?: 'sync-lipsync' | 'kling-lipsync';
 }
 
+// Build hyper-precise TTS prompt for natural speech
+function buildTTSPrompt(text: string): string {
+  return `Speak this text naturally with proper intonation and emotion:
+
+"${text}"
+
+VOICE REQUIREMENTS:
+- Natural conversational rhythm
+- Appropriate emotional tone matching content
+- Clear articulation of each syllable
+- Natural breathing pauses
+- Professional broadcast quality`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -25,7 +39,7 @@ serve(async (req) => {
     }
 
     const params: LipSyncRequest = await req.json();
-    const { imageUrl, audioUrl, text, voiceId, model = 'sync-lipsync' } = params;
+    const { imageUrl, audioUrl, text, model = 'kling-lipsync' } = params;
 
     if (!imageUrl) {
       throw new Error('imageUrl is required');
@@ -37,15 +51,12 @@ serve(async (req) => {
 
     console.log(`Generating lip sync: model=${model}, hasAudio=${!!audioUrl}, hasText=${!!text}`);
 
-    let endpoint: string;
-    let body: Record<string, unknown>;
-
-    // If text is provided but no audio, we need to generate audio first
     let finalAudioUrl = audioUrl;
 
+    // Generate TTS if text provided
     if (text && !audioUrl) {
-      // Use fal.ai TTS to generate audio
-      console.log('Generating TTS audio...');
+      console.log('Generating high-quality TTS audio...');
+      
       const ttsResponse = await fetch('https://queue.fal.run/fal-ai/f5-tts', {
         method: 'POST',
         headers: {
@@ -61,7 +72,7 @@ serve(async (req) => {
       if (!ttsResponse.ok) {
         const errorText = await ttsResponse.text();
         console.error('TTS error:', errorText);
-        throw new Error('Failed to generate TTS audio');
+        throw new Error('Failed to generate speech audio');
       }
 
       const ttsData = await ttsResponse.json();
@@ -88,20 +99,15 @@ serve(async (req) => {
       }
 
       finalAudioUrl = ttsResult.audio_url.url || ttsResult.audio_url;
-      console.log('TTS audio generated:', finalAudioUrl);
+      console.log('TTS audio ready');
     }
 
-    // Now do lip sync
+    // Lip sync with Kling Pro for best quality
+    let endpoint: string;
+    let body: Record<string, unknown>;
+
     switch (model) {
-      case 'kling-lipsync':
-        endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1/lipsync';
-        body = {
-          face_image_url: imageUrl,
-          audio_url: finalAudioUrl,
-        };
-        break;
       case 'sync-lipsync':
-      default:
         endpoint = 'https://queue.fal.run/fal-ai/sync-lipsync';
         body = {
           image_url: imageUrl,
@@ -109,9 +115,19 @@ serve(async (req) => {
           sync_mode: 'smooth',
         };
         break;
+      case 'kling-lipsync':
+      default:
+        // Kling Pro for highest quality lip sync
+        endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1/pro/lipsync';
+        body = {
+          face_image_url: imageUrl,
+          audio_url: finalAudioUrl,
+        };
+        break;
     }
 
-    // Submit lip sync job
+    console.log(`Submitting lip sync to ${model}...`);
+
     const submitResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -134,7 +150,7 @@ serve(async (req) => {
 
     // Poll for completion
     let result = null;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 180; i++) {
       await new Promise(resolve => setTimeout(resolve, 5000));
 
       const resultResponse = await fetch(`${endpoint}/requests/${requestId}`, {
@@ -147,6 +163,7 @@ serve(async (req) => {
         const data = await resultResponse.json();
         if (data.video?.url || data.video_url) {
           result = data;
+          console.log(`Lip sync completed at attempt ${i + 1}`);
           break;
         }
       }
