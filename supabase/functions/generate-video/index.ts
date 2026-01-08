@@ -9,9 +9,72 @@ interface VideoRequest {
   type: 'text-to-video' | 'image-to-video';
   prompt: string;
   imageUrl?: string;
-  duration?: number; // 5 or 10 seconds
+  duration?: number;
   aspectRatio?: '16:9' | '9:16' | '1:1';
   model?: 'kling' | 'minimax' | 'veo3';
+}
+
+// Build hyper-precise prompts for cinematic video generation
+function buildTextToVideoPrompt(userPrompt: string, aspectRatio: string): string {
+  const orientation = aspectRatio === '9:16' 
+    ? 'vertical framing optimized for mobile/social media viewing, subject centered with headroom'
+    : aspectRatio === '1:1'
+    ? 'square format with balanced composition, subject centered'
+    : 'cinematic widescreen horizontal framing with rule of thirds composition';
+
+  return `Create a cinematic, high-production-value video:
+
+SCENE: ${userPrompt}
+
+CINEMATOGRAPHY:
+- ${orientation}
+- Professional camera work with smooth, deliberate movements
+- Rack focus and depth of field for cinematic look
+- Golden hour or dramatic studio lighting
+- Natural motion blur matching 180-degree shutter rule
+
+VISUAL QUALITY:
+- 4K ultra-high definition clarity
+- Photorealistic textures and materials
+- Rich, film-grade color grading
+- Zero noise, artifacts, or digital distortions
+- Physically accurate motion and physics
+
+MOTION:
+- Fluid, organic movements
+- Consistent 24fps cinematic cadence
+- Natural acceleration and deceleration
+- No stuttering, warping, or morphing artifacts
+
+OUTPUT: Broadcast-quality footage suitable for professional use.`;
+}
+
+function buildImageToVideoPrompt(userPrompt: string): string {
+  return `Animate this image into cinematic video while preserving its exact visual identity:
+
+MOTION DIRECTIVE: ${userPrompt}
+
+PRESERVATION REQUIREMENTS:
+- Maintain exact colors, lighting, and style of source image
+- Preserve all facial features and proportions perfectly
+- Keep original composition and framing intact
+- Match the artistic intent and mood
+
+ANIMATION GUIDELINES:
+- Create subtle, organic movements that feel natural
+- Add ambient motion: hair sway, fabric movement, atmospheric particles
+- Implement realistic physics for all moving elements
+- Use gentle depth-of-field shifts for dimensionality
+- Include micro-movements for lifelike quality
+
+QUALITY STANDARDS:
+- Zero morphing distortions or warping
+- No identity drift or feature changes
+- Seamless frame-to-frame consistency
+- Professional motion blur appropriate to movement speed
+- Film-grade temporal coherence
+
+OUTPUT: A living photograph with cinematic motion.`;
 }
 
 serve(async (req) => {
@@ -26,38 +89,41 @@ serve(async (req) => {
     }
 
     const params: VideoRequest = await req.json();
-    const { type, prompt, imageUrl, duration = 5, aspectRatio = '16:9', model = 'kling' } = params;
+    const { type, prompt, imageUrl, duration = 5, aspectRatio = '16:9', model = 'veo3' } = params;
 
-    console.log(`Generating video: type=${type}, model=${model}, prompt=${prompt}`);
+    console.log(`Generating video: type=${type}, model=${model}, duration=${duration}s`);
 
     let endpoint: string;
     let body: Record<string, unknown>;
 
     if (type === 'text-to-video') {
-      // Text-to-Video using different models
+      const enhancedPrompt = buildTextToVideoPrompt(prompt, aspectRatio);
+      
       switch (model) {
         case 'minimax':
           endpoint = 'https://queue.fal.run/fal-ai/minimax-video';
           body = {
-            prompt,
+            prompt: enhancedPrompt,
             prompt_optimizer: true,
           };
           break;
-        case 'veo3':
-          endpoint = 'https://queue.fal.run/fal-ai/veo3';
-          body = {
-            prompt,
-            aspect_ratio: aspectRatio,
-            duration: `${duration}s`,
-          };
-          break;
         case 'kling':
-        default:
-          endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1.6/standard/text-to-video';
+          endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1.6/pro/text-to-video';
           body = {
-            prompt,
+            prompt: enhancedPrompt,
             duration: duration === 5 ? '5' : '10',
             aspect_ratio: aspectRatio,
+          };
+          break;
+        case 'veo3':
+        default:
+          // Google Veo 3.1 - Latest and best quality
+          endpoint = 'https://queue.fal.run/fal-ai/veo3';
+          body = {
+            prompt: enhancedPrompt,
+            aspect_ratio: aspectRatio,
+            duration: `${duration}s`,
+            resolution: '1080p',
           };
           break;
       }
@@ -66,31 +132,35 @@ serve(async (req) => {
         throw new Error('imageUrl is required for image-to-video');
       }
 
+      const enhancedPrompt = buildImageToVideoPrompt(prompt);
+
       switch (model) {
         case 'minimax':
           endpoint = 'https://queue.fal.run/fal-ai/minimax-video/image-to-video';
           body = {
-            prompt,
+            prompt: enhancedPrompt,
             image_url: imageUrl,
             prompt_optimizer: true,
           };
           break;
-        case 'veo3':
-          endpoint = 'https://queue.fal.run/fal-ai/veo3/image-to-video';
-          body = {
-            prompt,
-            image_url: imageUrl,
-            aspect_ratio: aspectRatio,
-          };
-          break;
         case 'kling':
-        default:
-          endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1.6/standard/image-to-video';
+          endpoint = 'https://queue.fal.run/fal-ai/kling-video/v1.6/pro/image-to-video';
           body = {
-            prompt,
+            prompt: enhancedPrompt,
             image_url: imageUrl,
             duration: duration === 5 ? '5' : '10',
             aspect_ratio: aspectRatio,
+          };
+          break;
+        case 'veo3':
+        default:
+          // Google Veo 3.1 image-to-video
+          endpoint = 'https://queue.fal.run/fal-ai/veo3/image-to-video';
+          body = {
+            prompt: enhancedPrompt,
+            image_url: imageUrl,
+            aspect_ratio: aspectRatio,
+            resolution: '1080p',
           };
           break;
       }
@@ -98,7 +168,8 @@ serve(async (req) => {
       throw new Error('Invalid video generation type');
     }
 
-    // Submit the job to fal.ai queue
+    console.log(`Using endpoint: ${endpoint}`);
+
     const submitResponse = await fetch(endpoint, {
       method: 'POST',
       headers: {
@@ -120,53 +191,37 @@ serve(async (req) => {
     console.log(`Job submitted, request_id: ${requestId}`);
 
     // Poll for completion
-    const statusEndpoint = `${endpoint.replace('/queue.fal.run/', '/queue.fal.run/')}/requests/${requestId}/status`;
     let result = null;
-    let attempts = 0;
-    const maxAttempts = 120; // 10 minutes max
+    const maxAttempts = 180; // 15 minutes max for high-quality renders
 
-    while (attempts < maxAttempts) {
-      await new Promise(resolve => setTimeout(resolve, 5000)); // Wait 5 seconds
+    for (let attempts = 0; attempts < maxAttempts; attempts++) {
+      await new Promise(resolve => setTimeout(resolve, 5000));
 
-      const statusResponse = await fetch(statusEndpoint, {
+      const statusResponse = await fetch(`${endpoint}/requests/${requestId}`, {
         headers: {
           'Authorization': `Key ${FAL_API_KEY}`,
         },
       });
 
-      if (!statusResponse.ok) {
-        attempts++;
-        continue;
-      }
-
-      const statusData = await statusResponse.json();
-      console.log(`Status check ${attempts + 1}: ${statusData.status}`);
-
-      if (statusData.status === 'COMPLETED') {
-        // Fetch the result
-        const resultEndpoint = `${endpoint.replace('/queue.fal.run/', '/queue.fal.run/')}/requests/${requestId}`;
-        const resultResponse = await fetch(resultEndpoint, {
-          headers: {
-            'Authorization': `Key ${FAL_API_KEY}`,
-          },
-        });
-
-        if (resultResponse.ok) {
-          result = await resultResponse.json();
+      if (statusResponse.ok) {
+        const data = await statusResponse.json();
+        
+        if (data.video?.url || data.video_url) {
+          result = data;
+          console.log(`Video generation completed at attempt ${attempts + 1}`);
+          break;
         }
-        break;
-      } else if (statusData.status === 'FAILED') {
-        throw new Error('Video generation failed');
+        
+        if (data.status === 'FAILED') {
+          throw new Error('Video generation failed');
+        }
       }
-
-      attempts++;
     }
 
     if (!result) {
       throw new Error('Video generation timed out');
     }
 
-    // Extract video URL from result
     const videoUrl = result.video?.url || result.video_url || result.output?.video_url;
 
     if (!videoUrl) {

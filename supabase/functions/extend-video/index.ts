@@ -11,6 +11,36 @@ interface ExtendVideoRequest {
   duration?: number;
 }
 
+// Build hyper-precise prompt for seamless video extension
+function buildExtendPrompt(userPrompt: string): string {
+  return `Continue this video seamlessly with perfect visual consistency:
+
+CONTINUATION SCENE: ${userPrompt}
+
+CONSISTENCY REQUIREMENTS:
+- Match EXACT visual style, color grading, and lighting
+- Preserve all character appearances and clothing precisely
+- Maintain environment details and atmospheric conditions
+- Continue camera style and movement patterns
+- Keep same level of detail and texture quality
+- Preserve aspect ratio and framing conventions
+
+TRANSITION QUALITY:
+- Invisible join between original and extended footage
+- No sudden lighting or exposure changes
+- Smooth motion continuation across the edit point
+- Natural flow of any ongoing actions or movements
+- Consistent audio ambiance and sound design
+
+TEMPORAL COHERENCE:
+- Maintain consistent frame rate and motion blur
+- Continue any established motion trajectories
+- Preserve the rhythm and pacing of the original
+- Seamless temporal flow without jump cuts
+
+OUTPUT: Extended footage indistinguishable from the original video.`;
+}
+
 serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
@@ -29,10 +59,11 @@ serve(async (req) => {
       throw new Error('videoUrl and prompt are required');
     }
 
-    console.log(`Extending video: prompt=${prompt}, duration=${duration}`);
+    const enhancedPrompt = buildExtendPrompt(prompt);
+    console.log(`Extending video: duration=${duration}s`);
 
-    // Use Kling video extend
-    const response = await fetch('https://queue.fal.run/fal-ai/kling-video/v1.6/standard/video-extend', {
+    // Use Kling Pro for best quality video extension
+    const response = await fetch('https://queue.fal.run/fal-ai/kling-video/v1.6/pro/video-extend', {
       method: 'POST',
       headers: {
         'Authorization': `Key ${FAL_API_KEY}`,
@@ -40,7 +71,7 @@ serve(async (req) => {
       },
       body: JSON.stringify({
         video_url: videoUrl,
-        prompt,
+        prompt: enhancedPrompt,
         duration: String(duration),
       }),
     });
@@ -56,12 +87,12 @@ serve(async (req) => {
 
     console.log(`Extend video job submitted, request_id: ${requestId}`);
 
-    // Poll for completion
+    // Poll for completion with extended timeout for quality
     let result = null;
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 180; i++) {
       await new Promise(resolve => setTimeout(resolve, 5000));
 
-      const resultResponse = await fetch(`https://queue.fal.run/fal-ai/kling-video/v1.6/standard/video-extend/requests/${requestId}`, {
+      const resultResponse = await fetch(`https://queue.fal.run/fal-ai/kling-video/v1.6/pro/video-extend/requests/${requestId}`, {
         headers: {
           'Authorization': `Key ${FAL_API_KEY}`,
         },
@@ -71,6 +102,7 @@ serve(async (req) => {
         const data = await resultResponse.json();
         if (data.video?.url || data.video_url) {
           result = data;
+          console.log(`Video extension completed at attempt ${i + 1}`);
           break;
         }
       }

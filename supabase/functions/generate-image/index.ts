@@ -10,77 +10,173 @@ interface GenerateRequest {
   baseImageUrl?: string;
   baseImages?: string[];
   type?: 'compose' | 'splice' | 'portrait' | 'pattern' | 'outpaint' | 'tune';
-  // Composer params
   styleStrength?: number;
   contentStrength?: number;
-  // Pattern params  
   patternImageUrl?: string;
-  // Outpaint params
   direction?: string;
   expansionAmount?: number;
 }
 
 function buildPrompt(params: GenerateRequest): string {
-  const { type, prompt } = params;
+  const { type, prompt, styleStrength = 50, contentStrength = 50, direction, expansionAmount = 25 } = params;
 
   switch (type) {
     case 'compose':
-      // Composer: Mix images and text with precision - place shapes/images on canvas and describe
-      return `Create an artistic image based on this description: ${prompt}. 
-The image should blend the visual elements precisely according to the composition described.
-Use high-quality artistic rendering with attention to lighting, color harmony, and visual balance.
-The result should be a cohesive artwork that matches the creative vision.`;
+      return `ARTISTIC COMPOSITION TASK:
+
+Create a masterful artistic composition based on: "${prompt}"
+
+COMPOSITION GUIDELINES:
+- Style influence: ${styleStrength}% (${styleStrength > 70 ? 'dominant stylistic interpretation' : styleStrength > 30 ? 'balanced style blend' : 'subtle style hints'})
+- Content fidelity: ${contentStrength}% (${contentStrength > 70 ? 'preserve original elements precisely' : contentStrength > 30 ? 'creative interpretation allowed' : 'abstract transformation'})
+
+TECHNICAL REQUIREMENTS:
+- Professional color theory with harmonious palette
+- Balanced visual weight and golden ratio composition
+- Dynamic lighting with natural shadow gradients
+- High-frequency detail in focal areas
+- Atmospheric depth and perspective accuracy
+
+OUTPUT: Gallery-worthy artwork with cohesive visual narrative.`;
 
     case 'splice':
-      // Splicer: Mix/crossbreed multiple images together, blending their visual "genes"
-      return `Crossbreed and splice these images together to create a hybrid artwork.
-Blend the visual DNA of each image: combine their colors, textures, shapes, and features.
-Like genetic crossbreeding, merge the distinctive traits from each parent image.
-Create a seamless fusion that inherits characteristics from all source images.
-${prompt}
-The result should look like a natural hybrid, not a collage or overlay.`;
+      return `GENETIC IMAGE SPLICING TASK:
+
+Crossbreed these images into a seamless hybrid artwork.
+
+FUSION DIRECTIVE: "${prompt}"
+
+SPLICING PROTOCOL:
+- Extract dominant visual "genes" from each parent image
+- Blend color DNA: merge palettes into unified scheme
+- Combine structural elements: shapes, forms, silhouettes
+- Fuse texture patterns: surface qualities and materials
+- Inherit stylistic traits from all sources proportionally
+
+QUALITY STANDARDS:
+- Result must look naturally bred, not digitally collaged
+- Seamless transitions between inherited features
+- Coherent lighting across all merged elements
+- Unified artistic style throughout
+- No visible seams, edges, or overlay artifacts
+
+OUTPUT: A new species of image that couldn't exist without all parents.`;
 
     case 'portrait':
-      // Portraits: Generate faces with adjustable genetic sliders (age, expression, features)
-      return `Generate a photorealistic portrait with these specifications: ${prompt}.
-Create a high-quality face with natural skin texture, realistic lighting, and proper anatomy.
-The portrait should have clear facial features, natural eye reflections, and realistic hair.
-Use studio-quality lighting that flatters the face. The expression should look natural and genuine.
-Avoid any AI artifacts, distortions, or unnatural features.`;
+      return `PHOTOREALISTIC PORTRAIT GENERATION:
+
+Create a stunning portrait with specifications: "${prompt}"
+
+FACIAL REQUIREMENTS:
+- Anatomically perfect proportions
+- Realistic skin texture with subsurface scattering
+- Natural pores, subtle imperfections for authenticity
+- Lifelike eyes with proper reflections and catchlights
+- Natural hair with individual strand detail
+
+LIGHTING & MOOD:
+- Professional studio or cinematic lighting
+- Soft key light with subtle fill
+- Rim lighting for dimensional separation
+- Catchlights positioned at 10 and 2 o'clock
+- Natural skin tone rendering
+
+TECHNICAL QUALITY:
+- Sharp focus on eyes and facial features
+- Shallow depth of field for portrait aesthetic
+- No uncanny valley artifacts
+- Natural expression, not frozen or artificial
+- Professional retouching look without over-processing
+
+OUTPUT: Magazine-cover-quality portrait photography.`;
 
     case 'pattern':
-      // Patterns: Combine a pattern/texture with a text description to create styled imagery
-      return `Transform this into an image using the provided pattern as a style guide.
-Apply the pattern's colors, textures, and visual rhythm to create: ${prompt}.
-The pattern should influence the overall aesthetic, color palette, and visual texture.
-Create a cohesive artwork where the pattern DNA is visible in every element.
-The result should feel like the description was painted using the pattern's visual language.`;
+      return `PATTERN-DRIVEN IMAGE SYNTHESIS:
+
+Transform the concept using pattern as visual DNA: "${prompt}"
+
+PATTERN INTEGRATION:
+- Extract color palette from pattern source
+- Apply rhythmic repetition subtly throughout
+- Use pattern motifs as texture layer
+- Match pattern's visual energy and mood
+- Integrate without obvious tiling
+
+STYLE TRANSFER:
+- Pattern dictates color choices
+- Original geometry guides composition
+- Blend pattern texture with subject matter
+- Maintain recognizable subject while pattern-influenced
+- Create harmony between pattern and content
+
+OUTPUT: An image that feels painted with the pattern's brush.`;
 
     case 'outpaint':
-      // Outpainter: Expand image beyond its borders, continuing the scene naturally
-      return `Expand this image beyond its current borders.
-${prompt}
-Continue the scene naturally in the extended areas:
-- Match the exact art style, color palette, and lighting of the original
-- Maintain perspective lines and vanishing points
-- Extend textures, patterns, and elements seamlessly
-- Keep the same level of detail and quality throughout
-- The extension should be indistinguishable from the original
-- No visible seams or boundaries between original and extended areas`;
+      const directionText = direction ? `extending ${direction}` : 'extending in all directions';
+      return `SEAMLESS IMAGE EXTENSION TASK:
+
+Expand this image beyond its borders by ${expansionAmount}%, ${directionText}.
+
+EXTENSION REQUIREMENTS:
+- EXACT match of original art style and technique
+- Perfect continuation of perspective lines
+- Seamless lighting gradient across boundaries
+- Natural extension of all textures and materials
+- Maintain consistent level of detail
+- Zero visible seams or joins
+
+CONTENT CONTINUATION:
+- ${prompt || 'Continue the scene naturally based on visual context'}
+- Logical spatial extension of environment
+- Maintain atmospheric perspective and depth
+- Extend any ongoing patterns or rhythms
+- Preserve color temperature throughout
+
+QUALITY MANDATE:
+- Extended areas must be indistinguishable from original
+- Perfect edge blending with source image
+- No AI artifacts or inconsistencies in extended zones
+- Professional quality matching original exactly
+
+OUTPUT: An expanded image that looks originally created at larger size.`;
 
     case 'tune':
-      // Tuner/Enhancer: Adjust and enhance image qualities (like photo editing on steroids)
-      return `Enhance and adjust this image with the following modifications: ${prompt}.
-Apply the adjustments while preserving the original subject and composition.
-Improve overall quality: sharpen details, optimize contrast, enhance colors naturally.
-Remove any noise or artifacts while keeping authentic texture.
-The result should look like a professionally retouched version of the original.`;
+      return `PROFESSIONAL IMAGE ENHANCEMENT TASK:
+
+Apply these adjustments while preserving image integrity: "${prompt}"
+
+ENHANCEMENT PROTOCOL:
+- Apply requested modifications precisely
+- Maintain original subject and composition
+- Preserve artistic intent and mood
+- Non-destructive enhancement approach
+
+QUALITY IMPROVEMENTS:
+- Optimal contrast and tonal range
+- Color accuracy and saturation balance
+- Noise reduction with detail preservation
+- Sharpening in focus areas only
+- Remove compression artifacts
+
+PROFESSIONAL STANDARDS:
+- Match high-end photo editing results
+- Natural-looking adjustments
+- No over-processing or artificial appearance
+- Preserve original image character
+- Export-ready quality
+
+OUTPUT: Professionally retouched image ready for publication.`;
 
     default:
-      // Default: General text-to-image generation
-      return `Create a high-quality artistic image: ${prompt}. 
-Style: professional digital art with excellent composition, lighting, and detail.
-The image should be visually striking and technically well-executed.`;
+      return `Create a stunning, high-quality image: "${prompt}"
+
+REQUIREMENTS:
+- Professional artistic execution
+- Excellent composition using golden ratio
+- Masterful lighting and color harmony
+- High level of detail and clarity
+- Visually striking and memorable
+- Gallery-quality output`;
   }
 }
 
@@ -98,32 +194,26 @@ serve(async (req) => {
     }
 
     const enhancedPrompt = buildPrompt(params);
-    console.log(`[generate-image] Type: ${params.type || 'default'}, Prompt length: ${enhancedPrompt.length}`);
+    console.log(`[generate-image] Type: ${params.type || 'default'}, Prompt: ${enhancedPrompt.substring(0, 100)}...`);
 
-    // Build messages array
     const messages: any[] = [];
     
-    // Handle different image input scenarios
     if (params.baseImages && params.baseImages.length > 0) {
-      // Multiple images (for splicer)
       const content: any[] = [{ type: "text", text: enhancedPrompt }];
       for (const imageUrl of params.baseImages) {
         content.push({ type: "image_url", image_url: { url: imageUrl } });
       }
       messages.push({ role: "user", content });
     } else if (params.baseImageUrl) {
-      // Single base image
       const content: any[] = [
         { type: "text", text: enhancedPrompt },
         { type: "image_url", image_url: { url: params.baseImageUrl } }
       ];
-      // Add pattern image if provided
       if (params.patternImageUrl) {
         content.push({ type: "image_url", image_url: { url: params.patternImageUrl } });
       }
       messages.push({ role: "user", content });
     } else if (params.patternImageUrl) {
-      // Pattern only (no base image)
       messages.push({
         role: "user",
         content: [
@@ -132,10 +222,10 @@ serve(async (req) => {
         ]
       });
     } else {
-      // Text only
       messages.push({ role: "user", content: enhancedPrompt });
     }
 
+    // Use Nano Banana (google/gemini-2.5-flash-image)
     const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -143,7 +233,7 @@ serve(async (req) => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-        model: "google/gemini-2.5-flash-image-preview",
+        model: "google/gemini-2.5-flash-image",
         messages,
         modalities: ["image", "text"]
       }),
@@ -152,19 +242,19 @@ serve(async (req) => {
     if (!response.ok) {
       console.error(`[generate-image] API error: ${response.status}`);
       if (response.status === 429) {
-        return new Response(JSON.stringify({ error: "Rate limit exceeded" }), {
+        return new Response(JSON.stringify({ error: "Rate limit exceeded. Please wait and try again." }), {
           status: 429,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
-        return new Response(JSON.stringify({ error: "Payment required" }), {
+        return new Response(JSON.stringify({ error: "Credits exhausted. Please add more credits." }), {
           status: 402,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const errorText = await response.text();
-      console.error(`[generate-image] Error response: ${errorText}`);
+      console.error(`[generate-image] Error: ${errorText}`);
       throw new Error(`AI gateway error: ${response.status}`);
     }
 
@@ -176,7 +266,7 @@ serve(async (req) => {
       throw new Error('No image generated');
     }
 
-    console.log(`[generate-image] Success! Generated image URL length: ${imageUrl.length}`);
+    console.log(`[generate-image] Success!`);
 
     return new Response(JSON.stringify({ imageUrl }), {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
