@@ -98,7 +98,9 @@ serve(async (request: Request) => {
     if (toolId === 'virtual-try-on' && baseImg && styleImg) {
       payload.human_image_url = normalizeImageInput(baseImg);
       payload.garment_image_url = normalizeImageInput(styleImg);
-      // idm-vton doesn't use prompt usually, but we keep it
+    } else if (toolId === 'style-transfer' && baseImg && styleImg) {
+      payload.image_url = normalizeImageInput(baseImg);
+      payload.styling_image_url = normalizeImageInput(styleImg);
     } else if (toolId === 'upscale' && baseImg) {
       payload.image_url = normalizeImageInput(baseImg);
     } else if (toolId === 'inpaint' && baseImg && maskImg) {
@@ -107,15 +109,20 @@ serve(async (request: Request) => {
     } else if (baseImg) {
       const imgUrl = normalizeImageInput(baseImg);
       payload.image_url = imgUrl;
-      // Multi-image for Composer/Splicer
-      if (styleImg || charImg) {
+
+      // Composer / Redux handling
+      if (model.includes("redux")) {
+        // Redux uses the reference as the MAIN image usually
+        payload.image_url = normalizeImageInput(styleImg || baseImg);
+      }
+
+      // Multi-image for Composer/Splicer (if using non-redux model)
+      if (!model.includes("redux") && (styleImg || charImg)) {
         payload.images = [
           { url: imgUrl, label: "base" },
           { url: normalizeImageInput(styleImg || ""), label: "style" },
           { url: normalizeImageInput(charImg || ""), label: "character" }
         ].filter(i => i.url);
-      } else {
-        payload.images = [{ url: imgUrl }];
       }
     }
 
@@ -149,24 +156,44 @@ serve(async (request: Request) => {
         } else if (SILICON_KEY) {
           console.log(`[SiliconFlow] Fallback for ${toolId}`);
 
-          // SiliconFlow expects "WIDTHxHEIGHT"
+          let sfModel = "black-forest-labs/FLUX.1-schnell";
+          const hasImage = !!(payload.image_url || payload.human_image_url || body.baseImage);
+
+          // Tool-specific mapping for SiliconFlow
+          if (body.tool === 'style-transfer' || body.tool === 'composer') {
+            sfModel = "Qwen/Qwen-Image-Edit";
+          } else if (body.tool === 'virtual-try-on' || body.tool === 'fashion-factory') {
+            // No direct VTON in SF, we fallback to Flux Dev for high quality
+            sfModel = "black-forest-labs/FLUX.1-dev";
+          } else if (hasImage) {
+            sfModel = "Qwen/Qwen-Image-Edit";
+          }
+
           let sfSize = "1024x768"; // Default
           if (payload.width && payload.height) {
             sfSize = `${payload.width}x${payload.height}`;
           } else if (body.aspectRatio) {
-            if (body.aspectRatio === "1:1") sfSize = "1024x1024";
-            else if (body.aspectRatio === "16:9") sfSize = "1024x576";
-            else if (body.aspectRatio === "9:16") sfSize = "576x1024";
-            else if (body.aspectRatio === "4:3") sfSize = "1024x768";
-            else if (body.aspectRatio === "3:4") sfSize = "768x1024";
+            const ratios: Record<string, string> = {
+              "1:1": "1024x1024", "16:9": "1024x576", "9:16": "576x1024",
+              "4:3": "1024x768", "3:4": "768x1024", "2:3": "640x960", "3:2": "960x640"
+            };
+            sfSize = ratios[body.aspectRatio] || "1024x768";
           }
 
-          result = await siliconFlowPostJson("images/generations", "black-forest-labs/FLUX.1-schnell", {
+          const sfPayload: any = {
             prompt: payload.prompt,
-            image_size: sfSize,
             batch_size: 1,
-            num_inference_steps: 4
-          });
+            num_inference_steps: (sfModel.includes("dev") || sfModel.includes("Qwen")) ? 20 : 4,
+          };
+
+          if (sfModel.includes("Qwen")) {
+            sfPayload.image = normalizeImageInput(body.baseImage || payload.image_url || payload.human_image_url);
+          } else {
+            sfPayload.image_size = sfSize;
+          }
+
+          console.log(`[SiliconFlow] Using model: ${sfModel} (Tool: ${body.tool})`);
+          result = await siliconFlowPostJson("images/generations", sfModel, sfPayload);
         } else if (TOGETHER_KEY) {
           console.log(`[Together AI] Fallback for ${toolId}`);
           result = await togetherPostJson("black-forest-labs/FLUX.1-schnell", payload);

@@ -3,6 +3,7 @@ import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
 import { corsHeaders, corsOptionsResponse } from "../_shared/cors.ts";
 import { falSubmit } from "../_shared/fal.ts"; // Using Queue submit
 import { siliconFlowSubmitVideo } from "../_shared/siliconflow.ts";
+import { huggingFacePost } from "../_shared/huggingface.ts";
 import { TOOLS, MODELS, VideoToolId } from "../_shared/prompts/catalogue.ts";
 import { PromptComponents, buildVideoPrompt } from "../_shared/prompts/templates.ts";
 
@@ -77,61 +78,93 @@ serve(async (request: Request) => {
             }
         }
 
+        console.log(`[Video] Tool: ${body.tool}, Model: ${model}, Fallback: ${body.useFallback}`);
+
         // Prepare Payload
         const payload: any = {
             aspect_ratio: body.aspectRatio || "16:9",
             duration: body.duration ? String(body.duration) : "5"
         };
         if (body.width && body.height) {
-            // Kling might prefer width/height or just aspect_ratio
-            // For now we keep aspect_ratio but allow width/height if model supports it
             payload.width = body.width;
             payload.height = body.height;
         }
         if (finalPrompt) payload.prompt = finalPrompt;
 
         // Specialized Model Handling
-        if (body.tool === 'lip-sync') {
-            const imgOrVid = body.imageBase64 || body.imageUrl;
-            if (imgOrVid) payload.video_url = normalizeImageInput(imgOrVid);
-            if (body.components?.subject) payload.audio_text = body.components.subject;
-        } else if (body.tool === 'talking-avatar') {
-            const img = body.imageBase64 || body.imageUrl;
-            if (img) payload.ref_image_url = normalizeImageInput(img);
-            if (body.components?.subject) payload.script = body.components.subject;
-        } else {
-            // Standard Text/Image to Video (Kling)
-            const img = body.imageBase64 || body.imageUrl;
-            if (img) {
-                payload.image_url = normalizeImageInput(img);
-                if (!model.includes("image-to-video")) {
+        const imgRaw = body.imageBase64 || body.imageUrl;
+        let isVideoInput = false;
+
+        if (imgRaw) {
+            const normImg = normalizeImageInput(imgRaw);
+            if (normImg.startsWith("blob:")) {
+                throw new Error("Local blob URLs cannot be used as reference. Please upload the file first or send as base64.");
+            }
+
+            if (normImg.startsWith("data:video/")) {
+                isVideoInput = true;
+                console.log("[Video] Video input detected. Switching to Video-to-Video mode.");
+                payload.video_url = normImg;
+                // Use Kling O1 for reference video-to-video if it's the standard tool or change-background
+                if (model.includes("kling")) {
+                    model = "fal-ai/kling-video/o1/video-to-video/reference";
+                }
+            } else {
+                payload.image_url = normImg;
+                // If it's image but model is text-to-video, switch to I2V
+                if (model.includes("text-to-video")) {
                     model = "fal-ai/kling-video/v1/standard/image-to-video";
                 }
             }
         }
 
-        console.log(`[Fal Video] Model: ${model}, Prompt: ${finalPrompt}`);
-
-        // Submit to Provider (Fal or SiliconFlow)
-        let requestId: string;
-        if (body.useFallback) {
-            console.log(`[SiliconFlow Video] Fallback for ${body.tool}`);
-            // Map to SiliconFlow models
-            const sfModel = body.tool === 'image-to-video' ? "tencent/HunyuanVideo" : "genmo/mochi-1-preview";
-            requestId = await siliconFlowSubmitVideo(sfModel, payload);
-        } else {
-            requestId = await falSubmit(model, payload);
+        if (body.tool === 'lip-sync') {
+            if (imgRaw) payload.video_url = normalizeImageInput(imgRaw);
+            if (body.components?.subject) payload.audio_text = body.components.subject;
+        } else if (body.tool === 'talking-avatar') {
+            if (imgRaw) payload.ref_image_url = normalizeImageInput(imgRaw);
+            if (body.components?.subject) payload.script = body.components.subject;
         }
+
+        // Final Model / Payload Sync
+        console.log(`[Fal Video] Model: ${model}, isVideo: ${isVideoInput}, Payload keys: ${Object.keys(payload)}`);
+
+        // Submit to Provider (Fal, HF, or SiliconFlow)
+        let requestId: string;
+        const HF_TOKEN = Deno.env.get("HUGGINGFACE_TOKEN");
+
+        try {
+            if (body.useFallback) {
+                if (HF_TOKEN && body.tool === 'text-to-video') {
+                    console.log(`[HF Video] Fallback for ${body.tool}`);
+                    // Note: HF video inference often returns a blob directly
+                    // We simulate a "waiting" state or handle it synchronously if possible
+                    // But for consistency with polling, we might just fail HF video if it's too complex
+                    // to poll. For now, we stick to SiliconFlow which has a proper API.
+                    console.warn("HF Video skip - using SiliconFlow for better async handling");
+                }
+
+                console.log(`[SiliconFlow Video] Fallback for ${body.tool}`);
+                const sfModel = body.tool === 'image-to-video' ? "tencent/HunyuanVideo" : "genmo/mochi-1-preview";
+                requestId = await siliconFlowSubmitVideo(sfModel, payload);
+            } else {
+                requestId = await falSubmit(model, payload);
+            }
+        } catch (submitErr: any) {
+            console.error("[Submit Error]:", submitErr.message);
+            throw new Error(`Provider submission failed: ${submitErr.message}`);
+        }
+
+        console.log(`[Video] Started: ${requestId}`);
 
         // Return Request ID (Operation Name)
         return new Response(JSON.stringify({ operationName: requestId }), {
             headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
 
-    } catch (err) {
-        console.error("[generate-video] error:", err);
-        const message = err instanceof Error ? err.message : "Unknown error";
-        return new Response(JSON.stringify({ error: message }), {
+    } catch (err: any) {
+        console.error("[generate-video] crash:", err.message);
+        return new Response(JSON.stringify({ error: err.message, stack: err.stack }), {
             status: 500,
             headers: { ...corsHeaders, "Content-Type": "application/json" },
         });

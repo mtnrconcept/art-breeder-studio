@@ -6,6 +6,7 @@ import { Slider } from '@/components/ui/slider';
 import { Upload, ImageIcon, Wand2, RefreshCw, Download, AlertCircle } from 'lucide-react';
 import { generateVideo } from '@/lib/gemini';
 import { useToast } from '@/hooks/use-toast';
+import { useVideoGeneration } from '@/hooks/use-video-generation';
 
 const backdropPresets = [
     { id: 'beach', label: 'Beach', emoji: '🏖️' },
@@ -20,18 +21,27 @@ const backdropPresets = [
 
 const ChangeBackdrop = () => {
     const [video, setVideo] = useState<string | null>(null);
+    const [videoBase64, setVideoBase64] = useState<string | null>(null);
     const [backdropImage, setBackdropImage] = useState<string | null>(null);
     const [selectedPreset, setSelectedPreset] = useState<string | null>(null);
     const [prompt, setPrompt] = useState('');
     const [edgeBlur, setEdgeBlur] = useState([20]);
-    const [isProcessing, setIsProcessing] = useState(false);
-    const [result, setResult] = useState<string | null>(null);
-    const [error, setError] = useState<string | null>(null);
+    const { isGenerating: isProcessing, videoUrl: result, error, createVideo, setVideoUrl: setResult } = useVideoGeneration();
     const { toast } = useToast();
 
     const handleVideoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
         const file = e.target.files?.[0];
-        if (file) { setVideo(URL.createObjectURL(file)); setResult(null); }
+        if (file) {
+            setVideo(URL.createObjectURL(file));
+            setResult(null);
+
+            // Convert to base64 for backend
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setVideoBase64(event.target?.result as string);
+            };
+            reader.readAsDataURL(file);
+        }
     };
 
     const handleBackdropUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -44,45 +54,24 @@ const ChangeBackdrop = () => {
     };
 
     const handleProcess = async () => {
-        if (!video) return;
-        setIsProcessing(true);
-        setError(null);
+        if (!videoBase64) return;
 
         try {
             const backdropDesc = selectedPreset ? backdropPresets.find(p => p.id === selectedPreset)?.label : "";
             const fullPrompt = `Change the background of this video to ${backdropDesc || prompt || 'a new scene'}. Ensure seamless person/subject isolation and natural lighting matching.`;
 
-            // Note: Veo 3 Video-to-Video isn't explicitly in the current SDK but we'll use generateVideo 
-            // with the source video as 'imageUrl' which the backend can handle as a reference media.
-            const res = await generateVideo(fullPrompt, {
-                imageUrl: video, // Using source video as reference
+            await createVideo(fullPrompt, {
+                imageUrl: videoBase64,
+                tool: 'image-to-video' as any // Use I2V as base for backdrop replacement in fallback
             });
 
-            if (res.success && res.videoUrl) {
-                setResult(res.videoUrl);
-                toast({
-                    title: "Backdrop Changed!",
-                    description: "Your video has been transformed.",
-                });
-            } else {
-                const errorMsg = res.error || 'Failed to change backdrop';
-                setError(errorMsg);
-                toast({
-                    title: "Process Failed",
-                    description: errorMsg,
-                    variant: "destructive",
-                });
-            }
         } catch (err) {
             const errorMsg = err instanceof Error ? err.message : 'Unknown error occurred';
-            setError(errorMsg);
             toast({
                 title: "Error",
                 description: errorMsg,
                 variant: "destructive",
             });
-        } finally {
-            setIsProcessing(false);
         }
     };
 

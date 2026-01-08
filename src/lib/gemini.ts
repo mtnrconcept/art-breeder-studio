@@ -81,6 +81,7 @@ export interface GenerationResult {
     imageUrl?: string;
     videoUrl?: string;
     error?: string;
+    operationName?: string;
 }
 
 export async function getCurrentUserId(): Promise<string | null> {
@@ -119,14 +120,24 @@ async function callEdgeGen(func: 'generate-image' | 'generate-video', body: any)
 
     try {
         const data = await execute(body);
-        return { success: true, imageUrl: data.imageUrl, videoUrl: data.videoUrl };
+        return {
+            success: true,
+            imageUrl: data.imageUrl,
+            videoUrl: data.videoUrl,
+            operationName: data.operationName
+        };
     } catch (e: any) {
         const errorMessage = e instanceof Error ? e.message : String(e);
         console.warn(`Primary ${func} failed, attempting fallback... Reason:`, errorMessage);
         try {
             // Attempt fallback
             const fallbackData = await execute({ ...body, useFallback: true });
-            return { success: true, imageUrl: fallbackData.imageUrl, videoUrl: fallbackData.videoUrl };
+            return {
+                success: true,
+                imageUrl: fallbackData.imageUrl,
+                videoUrl: fallbackData.videoUrl,
+                operationName: fallbackData.operationName
+            };
         } catch (fallbackError: any) {
             const fbMessage = fallbackError instanceof Error ? fallbackError.message : String(fallbackError);
             console.error(`Fallback ${func} also failed:`, fbMessage);
@@ -255,6 +266,7 @@ export async function imageToVideo(imageUrl: string, prompt: string, options?: {
     return callEdgeGen('generate-video', {
         tool: 'image-to-video',
         imageUrl: imageUrl,
+        prompt: prompt,
         components: { action: prompt, aspectRatio: options?.aspectRatio, width: options?.width, height: options?.height },
         aspectRatio: options?.aspectRatio,
         width: options?.width,
@@ -446,5 +458,11 @@ export async function tuneImage(imageUrl: string, prompt: string): Promise<Gener
 
 // Legacy / Aliases
 export async function generateImage(prompt: string, options?: any) { return textToImage(prompt, options); }
-export async function generateVideo(prompt: string, options?: any) { return textToVideo(prompt, options); }
+
+export async function generateVideo(prompt: string, options?: any) {
+    if (options?.imageUrl) {
+        return imageToVideo(options.imageUrl, prompt, options);
+    }
+    return textToVideo(prompt, options);
+}
 
